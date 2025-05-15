@@ -1,0 +1,10 @@
+# requirements.txt
+# Pip requirements for the Rally Racer Pygame project.
+#
+# To install these requirements using pip, run:
+#   pip install -r requirements.txt
+#
+# It's recommended to do this within a virtual environment.
+
+pygame>=2.5.0,<2.7.0 # Compatible with your pygame 2.6.1
+numpy>=1.20,<1.27    # A generally compatible range for NumPy
