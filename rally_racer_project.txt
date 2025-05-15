@@ -1,0 +1,19 @@
+rally_racer_project/
+|
+|-- main.py             # Your main game loop and initialization
+|-- constants.py        # All game constants (colors, screen dimensions, physics values)
+|-- utils.py            # General helper functions (math, collision checks)
+|-- sound_manager.py    # Sound loading and generation functions
+|-- course_generator.py # Functions for generating track elements
+|-- ui_elements.py      # Functions for drawing UI components (buttons, gauges, map)
+|
+|-- classes/            # Directory for your game object classes
+|   |-- __init__.py     # Makes 'classes' a Python package
+|   |-- particle.py     # Particle, DustParticle, MudParticle classes
+|   |-- car.py          # Car class
+|   |-- track_elements.py # Ramp, MudPatch, Checkpoint classes
+|
+|-- assets/             # (Optional) If you have images, fonts, etc.
+    |-- fonts/
+    |-- images/
+    |-- sounds/         # (If not generating all sounds procedurally)
