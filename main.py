@@ -2,36 +2,28 @@ import pygame
 import random
 import math
 import time
-import numpy as np # Keep if generate_sound_array (or other direct use) is in this file, else move to sound_manager
+import numpy as np 
 from collections import deque
 from enum import Enum, auto
 
 # Import from your new modules
-import constants as const
-from utils import (
-    deg_to_rad, rad_to_deg, angle_difference, normalize_angle,
+import constants as const 
+from utils import ( 
+    deg_to_rad, rad_to_deg, angle_difference, normalize_angle, 
     lerp, distance_sq, clamp, check_line_crossing
 )
-# Assuming generate_sound_array is moved to sound_manager.py
-from sound_manager import generate_sound_array
-# Assuming course generation functions are moved
+from sound_manager import generate_sound_array 
 from course_generator import (
-    generate_random_checkpoints, generate_random_mud_patches,
-    generate_random_ramps, is_too_close
+    generate_random_checkpoints, generate_random_mud_patches, 
+    generate_random_ramps, is_too_close 
 )
-# Assuming UI drawing functions are moved
 from ui_elements import (
-    draw_button, draw_rpm_gauge, draw_pedal_indicator,
+    draw_button, draw_rpm_gauge, draw_pedal_indicator, 
     draw_handbrake_indicator, draw_map, draw_scrolling_track, format_time
 )
 
 # Import classes
-# If using classes/__init__.py to expose classes at the package level:
 from classes import Car, Particle, DustParticle, MudParticle, Ramp, MudPatch, Checkpoint
-# Alternatively, if importing directly from each class file:
-# from classes.car import Car
-# from classes.particle import Particle, DustParticle, MudParticle
-# from classes.track_elements import Ramp, MudPatch, Checkpoint
 
 
 # GameState Enum
@@ -52,7 +44,7 @@ def main():
     title_font = pygame.font.Font(None, 72)
     lap_font = pygame.font.Font(None, 36)
     button_font = pygame.font.Font(None, 36)
-    ui_font_small = pygame.font.Font(None, 24) # Used for some HUD elements
+    ui_font_small = pygame.font.Font(None, 24) 
     option_font = pygame.font.Font(None, 40)
     countdown_font = pygame.font.Font(None, 150)
 
@@ -98,13 +90,10 @@ def main():
         const.BRAKE_PEDAL_WIDTH, 
         const.BRAKE_PEDAL_HEIGHT
     )
-    # HANDBRAKE_INDICATOR_POS is a tuple, calculated using constants
-    # (Ensure HANDBRAKE_INDICATOR_POS_X_OFFSET and Y_OFFSET are in constants.py or use direct values)
     HANDBRAKE_INDICATOR_POS_LOCAL = (
-        const.HANDBRAKE_INDICATOR_POS_X_OFFSET if hasattr(const, 'HANDBRAKE_INDICATOR_POS_X_OFFSET') else 340, # Fallback X
-        const.HANDBRAKE_INDICATOR_POS_Y_OFFSET if hasattr(const, 'HANDBRAKE_INDICATOR_POS_Y_OFFSET') else const.SCREEN_HEIGHT - 80 # Fallback Y
+        const.HANDBRAKE_INDICATOR_POS_X_OFFSET if hasattr(const, 'HANDBRAKE_INDICATOR_POS_X_OFFSET') else 340, 
+        const.HANDBRAKE_INDICATOR_POS_Y_OFFSET if hasattr(const, 'HANDBRAKE_INDICATOR_POS_Y_OFFSET') else const.SCREEN_HEIGHT - 80
     )
-    
     MAP_RECT_LOCAL = pygame.Rect(
         const.SCREEN_WIDTH - const.MAP_WIDTH - const.MAP_MARGIN, 
         const.MAP_MARGIN, 
@@ -115,7 +104,7 @@ def main():
     # Game Objects
     player_car = Car(const.CENTER_X, const.CENTER_Y) 
     ai_cars = []
-    mud_patches = []; checkpoints = []; course_checkpoints_coords = []; ramps = []
+    mud_patches = []; checkpoints = []; course_checkpoints_coords = []; ramps = [] 
 
     # Setup Options
     selected_laps = const.DEFAULT_RACE_LAPS
@@ -130,7 +119,7 @@ def main():
     difficulty_options = ["Easy", "Medium", "Hard", "Random"] 
     selected_difficulty_index = const.DEFAULT_DIFFICULTY_INDEX if hasattr(const, 'DEFAULT_DIFFICULTY_INDEX') else 1
 
-    # UI Element Rects for Setup Screen (using constants from const module)
+    # UI Element Rects for Setup Screen
     laps_label_pos = (const.OPTION_LABEL_X, const.OPTION_Y_START + 0 * const.ROW_SPACING)
     laps_value_pos = (const.OPTION_VALUE_X, const.OPTION_Y_START + 0 * const.ROW_SPACING)
     laps_minus_rect = pygame.Rect(const.OPTION_MINUS_X, const.OPTION_Y_START + 0 * const.ROW_SPACING - const.OPTION_BUTTON_HEIGHT//2, const.OPTION_BUTTON_WIDTH, const.OPTION_BUTTON_HEIGHT)
@@ -290,15 +279,21 @@ def main():
             cars_to_update_physics = [player_car] + ai_cars
             for car_obj in cars_to_update_physics:
                 car_obj.on_mud = False 
-                car_world_rect = car_obj.get_world_collision_rect()
+                car_world_rect = car_obj.get_world_collision_rect() 
+                
                 for mud in mud_patches:
                     if car_world_rect.colliderect(mud.rect) and mud.check_collision((car_obj.world_x, car_obj.world_y)):
                         car_obj.on_mud = True; break
-                if not car_obj.is_airborne:
-                    for ramp in ramps:
-                        if ramp.check_collision(car_world_rect) and car_obj.speed > car_obj.max_car_speed * const.MIN_JUMP_SPEED_FACTOR:
-                            car_obj.trigger_jump(); break
-                car_obj.update(dt)
+                
+                if not car_obj.is_airborne: 
+                    for ramp_obj in ramps: 
+                        if ramp_obj.check_collision(car_world_rect): 
+                            if car_obj.speed > car_obj.max_car_speed * const.MIN_JUMP_SPEED_FACTOR:
+                                # print(f"DEBUG: Car {'AI' if car_obj.is_ai else 'Player'} trying to jump. Speed: {car_obj.speed:.1f}, MinSpeed: {car_obj.max_car_speed * const.MIN_JUMP_SPEED_FACTOR:.1f}, Airborne: {car_obj.is_airborne}")
+                                car_obj.trigger_jump() 
+                                break 
+                                
+                car_obj.update(dt) 
             
             for i in range(len(cars_to_update_physics)):
                 for j in range(i + 1, len(cars_to_update_physics)):
@@ -326,7 +321,7 @@ def main():
                 target_volume = const.ENGINE_MIN_VOL + (const.ENGINE_MAX_VOL - const.ENGINE_MIN_VOL) * throttle_influence * rpm_influence
                 engine_channel.set_volume(clamp(target_volume, 0.0, 1.0))
             
-            if not player_race_finished:
+            if not player_race_finished: # Player Race Logic
                 car_pos = (player_car.world_x, player_car.world_y); car_prev_pos = (player_car.prev_world_x, player_car.prev_world_y)
                 num_actual_cps = len(course_checkpoints_coords)
                 if player_race_started and 0 <= player_next_checkpoint_index < num_actual_cps:
@@ -409,8 +404,13 @@ def main():
                 ai.draw_dust(screen, cam_offset_x_race, cam_offset_y_race)
                 ai.draw_mud_splash(screen, cam_offset_x_race, cam_offset_y_race)
             for mud in mud_patches: mud.draw(screen, cam_offset_x_race, cam_offset_y_race)
-            if const.DEBUG_DRAW_RAMPS:
-                for ramp_obj in ramps: ramp_obj.draw_debug(screen, cam_offset_x_race, cam_offset_y_race)
+            
+            for ramp_obj in ramps: 
+                ramp_obj.draw(screen, cam_offset_x_race, cam_offset_y_race) 
+            if const.DEBUG_DRAW_RAMPS: # This will draw debug outlines ON TOP of solid ramps if both are true
+                for ramp_obj in ramps: 
+                    ramp_obj.draw_debug(screen, cam_offset_x_race, cam_offset_y_race)
+
             sf_p1_screen = (int(const.START_FINISH_LINE[0][0] - cam_offset_x_race + const.CENTER_X), int(const.START_FINISH_LINE[0][1] - cam_offset_y_race + const.CENTER_Y))
             sf_p2_screen = (int(const.START_FINISH_LINE[1][0] - cam_offset_x_race + const.CENTER_X), int(const.START_FINISH_LINE[1][1] - cam_offset_y_race + const.CENTER_Y))
             pygame.draw.line(screen, const.START_FINISH_LINE_COLOR, sf_p1_screen, sf_p2_screen, const.START_FINISH_WIDTH)

@@ -52,6 +52,9 @@ BUTTON_COLOR = (100, 100, 100)
 BUTTON_HOVER_COLOR = (150, 150, 150)
 BUTTON_TEXT_COLOR = WHITE
 
+RAMP_COLOR = (160, 160, 170)  # A light metallic gray for the ramp surface
+RAMP_BORDER_COLOR = (100, 100, 110) # A darker gray for the border/edges
+
 # List of distinct colors for AI cars
 AI_AVAILABLE_COLORS = [
     (0, 150, 255),   # Sky Blue
