@@ -178,16 +178,13 @@ def main():
                             ai_car_instance.apply_ai_difficulty(selected_difficulty_index, difficulty_options)
                             ai_cars.append(ai_car_instance)
 
-                        # --- Course Generation Order ---
-                        # 1. Checkpoints
                         course_checkpoints_coords = generate_random_checkpoints(selected_num_checkpoints, [], const.START_FINISH_LINE)
                         checkpoints = [Checkpoint(const.START_FINISH_LINE[0][0], const.START_FINISH_LINE[0][1], -1, is_gate=True),
                                        Checkpoint(const.START_FINISH_LINE[1][0], const.START_FINISH_LINE[1][1], -1, is_gate=True)]
                         for i_cp, (cx_cp, cy_cp) in enumerate(course_checkpoints_coords): checkpoints.append(Checkpoint(cx_cp, cy_cp, i_cp))
                         
-                        all_obstacles_for_gen = list(checkpoints) # For spacing physical obstacles
+                        all_obstacles_for_gen = list(checkpoints) 
 
-                        # 2. Road Path (depends on checkpoints)
                         if hasattr(const, 'ROAD_WIDTH') and const.ROAD_WIDTH > 0:
                             centerline_road_points, road_segments_polygons = generate_road_path(
                                 checkpoints, const.START_FINISH_LINE, const.ROAD_WIDTH
@@ -196,7 +193,6 @@ def main():
                             centerline_road_points = []
                             road_segments_polygons = []
 
-                        # 3. Mud Patches (pass road data to avoid spawning on road)
                         mud_patches = generate_random_mud_patches(
                             const.NUM_MUD_PATCHES, all_obstacles_for_gen, 
                             const.START_FINISH_LINE, course_checkpoints_coords,
@@ -204,7 +200,6 @@ def main():
                         )
                         all_obstacles_for_gen.extend(mud_patches)
 
-                        # 4. Ramps (pass road data to avoid/control spawning on road)
                         ramps = generate_random_ramps(
                             const.NUM_RAMPS, all_obstacles_for_gen, 
                             const.START_FINISH_LINE,
@@ -212,7 +207,6 @@ def main():
                         )
                         all_obstacles_for_gen.extend(ramps)
 
-                        # 5. Visual Hills (pass road data to avoid spawning on road)
                         if hasattr(const, 'NUM_VISUAL_HILLS') and const.NUM_VISUAL_HILLS > 0:
                             visual_hills = generate_random_hills(
                                 const.NUM_VISUAL_HILLS, all_obstacles_for_gen,
@@ -246,7 +240,6 @@ def main():
                         if sounds_loaded and engine_channel and skid_channel:
                             engine_channel.stop(); skid_channel.stop()
 
-        # --- State Updates ---
         if game_state == GameState.SETUP:
              pass
         elif game_state == GameState.COUNTDOWN:
@@ -292,61 +285,51 @@ def main():
 
             cars_to_update_physics = [player_car] + ai_cars
             for car_obj in cars_to_update_physics:
-                # Reset surface flags
                 car_obj.on_mud = False
                 car_obj.on_road = False
-                car_obj.on_grass = False # Will be set if not on mud or road
-
+                car_obj.on_grass = False 
                 car_world_rect = car_obj.get_world_collision_rect()
                 car_center_world = (car_obj.world_x, car_obj.world_y)
 
-                # 1. Check for mud (highest priority for physics change)
                 for mud in mud_patches:
                     if car_world_rect.colliderect(mud.rect) and mud.check_collision(car_center_world):
-                        car_obj.on_mud = True
-                        break
+                        car_obj.on_mud = True; break
                 
-                # 2. If not on mud, check if on road
                 if not car_obj.on_mud and road_segments_polygons:
                     for road_poly in road_segments_polygons:
                         if is_point_in_polygon(car_center_world, road_poly):
-                            car_obj.on_road = True
-                            break 
+                            car_obj.on_road = True; break 
                 
-                # 3. Determine if on grass
                 if not car_obj.on_mud and not car_obj.on_road:
-                    car_obj.on_grass = True # Assumed if not on other specific surfaces
+                    car_obj.on_grass = True 
 
-                # Ramp and Hill collision (jump triggers)
                 if not car_obj.is_airborne:
                     for ramp_obj in ramps:
                         if ramp_obj.check_collision(car_world_rect):
                             if car_obj.speed > car_obj.max_car_speed * const.MIN_JUMP_SPEED_FACTOR:
                                 car_obj.trigger_jump(); break
                 
-                collided_with_a_crest_this_frame = False # For hill jump logic
+                collided_with_a_crest_this_frame = False
                 if not car_obj.is_airborne and visual_hills:
                     for hill in visual_hills:
-                        if hill.check_collision(car_world_rect): # Broad phase for hill
-                            if hill.check_crest_collision(car_obj.world_x, car_obj.world_y): # Narrow phase for crest
+                        if hill.check_collision(car_world_rect):
+                            if hill.check_crest_collision(car_obj.world_x, car_obj.world_y):
                                 collided_with_a_crest_this_frame = True
-                                if car_obj.last_collided_hill_crest != hill: # New crest entry
+                                if car_obj.last_collided_hill_crest != hill:
                                     min_speed_for_hill_jump = car_obj.max_car_speed * const.MIN_JUMP_SPEED_FACTOR
                                     if car_obj.speed > min_speed_for_hill_jump:
                                         car_obj.trigger_jump()
                                         car_obj.last_collided_hill_crest = hill
                                         break 
                                 break 
-                            elif car_obj.last_collided_hill_crest == hill: # Left this hill's crest but still on hill
+                            elif car_obj.last_collided_hill_crest == hill:
                                  car_obj.last_collided_hill_crest = None 
-                        elif car_obj.last_collided_hill_crest == hill: # No longer near this hill at all
+                        elif car_obj.last_collided_hill_crest == hill:
                             car_obj.last_collided_hill_crest = None
                                 
-                car_obj.update(dt) # Apply physics, which now uses on_road, on_mud, on_grass flags
-
+                car_obj.update(dt)
                 if tire_tracks_surface and hasattr(car_obj, 'leave_tire_tracks'):
                     car_obj.leave_tire_tracks(tire_tracks_surface, const.WORLD_BOUNDS)
-
 
             for i in range(len(cars_to_update_physics)):
                 for j in range(i + 1, len(cars_to_update_physics)):
@@ -480,6 +463,30 @@ def main():
                 ai.rotate_and_position_shapes(); ai.draw(screen)
             player_car.screen_x = const.CENTER_X; player_car.screen_y = const.CENTER_Y
             player_car.rotate_and_position_shapes(); player_car.draw(screen)
+            
+            # --- HUD Elements - Lap Timers MOVED to top-left ---
+            timer_x_pos = 20 
+            timer_y_start = 20 
+            total_tm_str = "00:00.00"; current_lp_str = "00:00.00"
+            if player_race_started and not player_race_finished:
+                total_tm_val = current_time_s - total_race_start_time; current_lp_val = current_time_s - player_lap_start_time
+                total_tm_str = format_time(total_tm_val); current_lp_str = format_time(current_lp_val)
+            elif player_race_finished :
+                total_tm_str = format_time(player_final_total_time)
+                if player_lap_times: current_lp_str = format_time(player_lap_times[-1])
+            total_tm_txt_surf = font.render(f"Total: {total_tm_str}", True, const.WHITE)
+            screen.blit(total_tm_txt_surf, (timer_x_pos, timer_y_start))
+            cur_lap_tm_txt_surf = font.render(f"Lap: {current_lp_str}", True, const.WHITE)
+            screen.blit(cur_lap_tm_txt_surf, (timer_x_pos, timer_y_start + 40))
+            y_lp_offset_ui = timer_y_start + 80 
+            for i_lp, l_time_val in enumerate(reversed(player_lap_times)):
+                if i_lp >= 3: break 
+                lap_n = len(player_lap_times) - i_lp
+                lp_time_surf_ui = lap_font.render(f"Lap {lap_n}: {format_time(l_time_val)}", True, const.GRAY)
+                screen.blit(lp_time_surf_ui, (timer_x_pos, y_lp_offset_ui)); y_lp_offset_ui += 35
+            # --- END LAP TIMERS ---
+
+            # Other HUD elements (Speed, RPM, Pedals - bottom left; Lap Counter, Next CP - top center)
             speed_denom = player_car.max_car_speed if player_car.max_car_speed > 0 else 1.0
             base_kph = 160
             disp_kph = (player_car.max_car_speed / const.BASE_MAX_CAR_SPEED) * base_kph * (player_car.speed / player_car.max_car_speed if player_car.max_car_speed > 0 else 0)
@@ -496,20 +503,7 @@ def main():
                 if 0 <= player_next_checkpoint_index < num_actual_cps_disp: next_cp_disp_text = f"Next CP: {player_next_checkpoint_index + 1}/{num_actual_cps_disp}"
                 else: next_cp_disp_text = "To Finish Line"
             next_cp_txt_surf = font.render(next_cp_disp_text, True, const.NEXT_CHECKPOINT_INDICATOR_COLOR); screen.blit(next_cp_txt_surf, (const.CENTER_X - next_cp_txt_surf.get_width() // 2, 60))
-            total_tm_str = "00:00.00"; current_lp_str = "00:00.00"
-            if player_race_started and not player_race_finished:
-                total_tm_val = current_time_s - total_race_start_time; current_lp_val = current_time_s - player_lap_start_time
-                total_tm_str = format_time(total_tm_val); current_lp_str = format_time(current_lp_val)
-            elif player_race_finished :
-                total_tm_str = format_time(player_final_total_time)
-                if player_lap_times: current_lp_str = format_time(player_lap_times[-1])
-            total_tm_txt_surf = font.render(f"Total: {total_tm_str}", True, const.WHITE); screen.blit(total_tm_txt_surf, (const.SCREEN_WIDTH - total_tm_txt_surf.get_width() - 20, 20))
-            cur_lap_tm_txt_surf = font.render(f"Lap: {current_lp_str}", True, const.WHITE); screen.blit(cur_lap_tm_txt_surf, (const.SCREEN_WIDTH - cur_lap_tm_txt_surf.get_width() - 20, 60))
-            y_lp_offset_ui = 100
-            for i_lp, l_time_val in enumerate(reversed(player_lap_times)):
-                if i_lp >= 5: break
-                lap_n = len(player_lap_times) - i_lp; lp_time_surf_ui = lap_font.render(f"Lap {lap_n}: {format_time(l_time_val)}", True, const.GRAY)
-                screen.blit(lp_time_surf_ui, (const.SCREEN_WIDTH - lp_time_surf_ui.get_width() - 20 , y_lp_offset_ui)); y_lp_offset_ui += 40
+            
             draw_map(screen, player_car, ai_cars, mud_patches, checkpoints, map_next_cp_idx, const.START_FINISH_LINE, MAP_RECT_LOCAL, const.WORLD_BOUNDS, ramps, visual_hills)
 
         elif game_state == GameState.FINISHED:

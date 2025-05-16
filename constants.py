@@ -205,8 +205,8 @@ ROUNDABOUT_CENTERLINE_RADIUS = 120
 ROUNDABOUT_DETAIL_SEGMENTS = 16   
 
 # --- Surface Physics Modifiers ---
-ROAD_FRICTION_MULTIPLIER = 1.15  
-GRASS_FRICTION_MULTIPLIER = 0.85 
-GRASS_SPEED_DAMPENING = 0.98   # Lower value = more dampening (e.g., 0.95 would slow down more)
-MUD_FRICTION_MULTIPLIER = 0.7  
-MUD_SPEED_DAMPENING = 0.90
+ROAD_FRICTION_MULTIPLIER = 1.15  # Road is grippy
+GRASS_FRICTION_MULTIPLIER = 0.75 # Was 0.85 - Less grip on grass
+GRASS_SPEED_DAMPENING = 0.95   # Was 0.98 - More speed loss on grass
+MUD_FRICTION_MULTIPLIER = 0.6  # Was 0.7 - Even less grip in mud
+MUD_SPEED_DAMPENING = 0.85     # Was 0.90 - Significant speed loss in mud
