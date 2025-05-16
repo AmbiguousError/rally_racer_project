@@ -2,23 +2,23 @@ import pygame
 import random
 import math
 import time
-import numpy as np 
+import numpy as np
 from collections import deque
 from enum import Enum, auto
 
 # Import from your new modules
-import constants as const 
-from utils import ( 
-    deg_to_rad, rad_to_deg, angle_difference, normalize_angle, 
+import constants as const
+from utils import (
+    deg_to_rad, rad_to_deg, angle_difference, normalize_angle,
     lerp, distance_sq, clamp, check_line_crossing
 )
-from sound_manager import generate_sound_array 
+from sound_manager import generate_sound_array
 from course_generator import (
-    generate_random_checkpoints, generate_random_mud_patches, 
-    generate_random_ramps, is_too_close 
+    generate_random_checkpoints, generate_random_mud_patches,
+    generate_random_ramps, is_too_close, generate_random_hills # Ensured generate_random_hills is imported
 )
 from ui_elements import (
-    draw_button, draw_rpm_gauge, draw_pedal_indicator, 
+    draw_button, draw_rpm_gauge, draw_pedal_indicator,
     draw_handbrake_indicator, draw_map, draw_scrolling_track, format_time
 )
 
@@ -39,12 +39,12 @@ def main():
     screen = pygame.display.set_mode((const.SCREEN_WIDTH, const.SCREEN_HEIGHT))
     pygame.display.set_caption("Rally Racer")
     clock = pygame.time.Clock()
-    
+
     font = pygame.font.Font(None, 40)
     title_font = pygame.font.Font(None, 72)
     lap_font = pygame.font.Font(None, 36)
     button_font = pygame.font.Font(None, 36)
-    ui_font_small = pygame.font.Font(None, 24) 
+    ui_font_small = pygame.font.Font(None, 24)
     option_font = pygame.font.Font(None, 40)
     countdown_font = pygame.font.Font(None, 150)
 
@@ -54,12 +54,12 @@ def main():
         beep_low_arr = generate_sound_array(const.BEEP_FREQ_LOW, const.BEEP_DURATION_MS, waveform='sine', sample_rate=const.SAMPLE_RATE)
         skid_arr = generate_sound_array(0, const.SKID_DURATION_MS, waveform='noise', sample_rate=const.SAMPLE_RATE)
         engine_arr = generate_sound_array(const.ENGINE_BASE_FREQ, 1000, waveform='engine', sample_rate=const.SAMPLE_RATE)
-        
+
         beep_high_sound = pygame.mixer.Sound(buffer=beep_high_arr)
         beep_low_sound = pygame.mixer.Sound(buffer=beep_low_arr)
         skid_sound = pygame.mixer.Sound(buffer=skid_arr)
         engine_sound = pygame.mixer.Sound(buffer=engine_arr)
-        
+
         skid_sound.set_volume(const.SKID_VOL)
         engine_channel = pygame.mixer.Channel(0)
         skid_channel = pygame.mixer.Channel(1)
@@ -73,50 +73,51 @@ def main():
 
     # --- Define UI Element Rects and Positions LOCALLY using constants from const module ---
     RPM_GAUGE_RECT_LOCAL = pygame.Rect(
-        20, 
-        const.SCREEN_HEIGHT - 110, 
-        const.RPM_GAUGE_WIDTH, 
+        20,
+        const.SCREEN_HEIGHT - 110,
+        const.RPM_GAUGE_WIDTH,
         const.RPM_GAUGE_HEIGHT
     )
     ACCEL_PEDAL_RECT_LOCAL = pygame.Rect(
-        230, 
-        const.SCREEN_HEIGHT - 110, 
-        const.ACCEL_PEDAL_WIDTH, 
+        230,
+        const.SCREEN_HEIGHT - 110,
+        const.ACCEL_PEDAL_WIDTH,
         const.ACCEL_PEDAL_HEIGHT
     )
     BRAKE_PEDAL_RECT_LOCAL = pygame.Rect(
-        280, 
-        const.SCREEN_HEIGHT - 110, 
-        const.BRAKE_PEDAL_WIDTH, 
+        280,
+        const.SCREEN_HEIGHT - 110,
+        const.BRAKE_PEDAL_WIDTH,
         const.BRAKE_PEDAL_HEIGHT
     )
     HANDBRAKE_INDICATOR_POS_LOCAL = (
-        const.HANDBRAKE_INDICATOR_POS_X_OFFSET if hasattr(const, 'HANDBRAKE_INDICATOR_POS_X_OFFSET') else 340, 
+        const.HANDBRAKE_INDICATOR_POS_X_OFFSET if hasattr(const, 'HANDBRAKE_INDICATOR_POS_X_OFFSET') else 340,
         const.HANDBRAKE_INDICATOR_POS_Y_OFFSET if hasattr(const, 'HANDBRAKE_INDICATOR_POS_Y_OFFSET') else const.SCREEN_HEIGHT - 80
     )
     MAP_RECT_LOCAL = pygame.Rect(
-        const.SCREEN_WIDTH - const.MAP_WIDTH - const.MAP_MARGIN, 
-        const.MAP_MARGIN, 
-        const.MAP_WIDTH, 
+        const.SCREEN_WIDTH - const.MAP_WIDTH - const.MAP_MARGIN,
+        const.MAP_MARGIN,
+        const.MAP_WIDTH,
         const.MAP_HEIGHT
     )
-    
+
     # Game Objects
-    player_car = Car(const.CENTER_X, const.CENTER_Y) 
+    player_car = Car(const.CENTER_X, const.CENTER_Y)
     ai_cars = []
-    mud_patches = []; checkpoints = []; course_checkpoints_coords = []; ramps = [] 
+    mud_patches = []; checkpoints = []; course_checkpoints_coords = []; ramps = []
+    visual_hills = []
 
     # Setup Options
     selected_laps = const.DEFAULT_RACE_LAPS
-    top_speed_options = [50, 75, 100, 125, 150, 200, 250] 
+    top_speed_options = [50, 75, 100, 125, 150, 200, 250]
     selected_speed_index = const.DEFAULT_TOP_SPEED_INDEX if hasattr(const, 'DEFAULT_TOP_SPEED_INDEX') else 2
-    grip_options = [50, 75, 100, 125, 150, 200, 250]    
+    grip_options = [50, 75, 100, 125, 150, 200, 250]
     selected_grip_index = const.DEFAULT_GRIP_INDEX if hasattr(const, 'DEFAULT_GRIP_INDEX') else 2
     selected_num_checkpoints = const.DEFAULT_NUM_CHECKPOINTS if hasattr(const, 'DEFAULT_NUM_CHECKPOINTS') else 7
     max_checkpoints = const.MAX_CHECKPOINTS_ALLOWED if hasattr(const, 'MAX_CHECKPOINTS_ALLOWED') else 10
     selected_num_ai = const.DEFAULT_NUM_AI if hasattr(const, 'DEFAULT_NUM_AI') else 1
-    max_ai = const.MAX_AI_OPPONENTS if hasattr(const, 'MAX_AI_OPPONENTS') else 5 
-    difficulty_options = ["Easy", "Medium", "Hard", "Random"] 
+    max_ai = const.MAX_AI_OPPONENTS if hasattr(const, 'MAX_AI_OPPONENTS') else 5
+    difficulty_options = ["Easy", "Medium", "Hard", "Random"]
     selected_difficulty_index = const.DEFAULT_DIFFICULTY_INDEX if hasattr(const, 'DEFAULT_DIFFICULTY_INDEX') else 1
 
     # UI Element Rects for Setup Screen
@@ -149,7 +150,7 @@ def main():
 
     # Game State Variables
     game_state = GameState.SETUP
-    total_laps = selected_laps 
+    total_laps = selected_laps
     player_current_lap = 0; player_next_checkpoint_index = -1
     player_lap_times = []; player_lap_start_time = 0.0
     player_race_started = False; player_race_finished = False
@@ -180,7 +181,7 @@ def main():
                     elif checkpoints_minus_rect.collidepoint(event.pos): selected_num_checkpoints = max(1, selected_num_checkpoints - 1)
                     elif checkpoints_plus_rect.collidepoint(event.pos): selected_num_checkpoints = min(max_checkpoints, selected_num_checkpoints + 1)
                     elif ai_minus_rect.collidepoint(event.pos): selected_num_ai = max(0, selected_num_ai - 1)
-                    elif ai_plus_rect.collidepoint(event.pos): selected_num_ai = min(max_ai, selected_num_ai + 1) 
+                    elif ai_plus_rect.collidepoint(event.pos): selected_num_ai = min(max_ai, selected_num_ai + 1)
                     elif difficulty_minus_rect.collidepoint(event.pos): selected_difficulty_index = (selected_difficulty_index - 1 + len(difficulty_options)) % len(difficulty_options)
                     elif difficulty_plus_rect.collidepoint(event.pos): selected_difficulty_index = (selected_difficulty_index + 1) % len(difficulty_options)
                     elif start_button_rect.collidepoint(event.pos):
@@ -197,19 +198,30 @@ def main():
                         checkpoints = [Checkpoint(const.START_FINISH_LINE[0][0], const.START_FINISH_LINE[0][1], -1, is_gate=True),
                                        Checkpoint(const.START_FINISH_LINE[1][0], const.START_FINISH_LINE[1][1], -1, is_gate=True)]
                         for i_cp, (cx_cp, cy_cp) in enumerate(course_checkpoints_coords): checkpoints.append(Checkpoint(cx_cp, cy_cp, i_cp))
-                        
+
                         all_obstacles_for_gen = list(checkpoints)
                         mud_patches = generate_random_mud_patches(const.NUM_MUD_PATCHES, all_obstacles_for_gen, const.START_FINISH_LINE, course_checkpoints_coords)
                         all_obstacles_for_gen.extend(mud_patches)
                         ramps = generate_random_ramps(const.NUM_RAMPS, all_obstacles_for_gen, const.START_FINISH_LINE)
+                        all_obstacles_for_gen.extend(ramps)
+
+                        if hasattr(const, 'NUM_VISUAL_HILLS') and const.NUM_VISUAL_HILLS > 0:
+                            visual_hills = generate_random_hills(
+                                const.NUM_VISUAL_HILLS,
+                                all_obstacles_for_gen,
+                                const.START_FINISH_LINE,
+                                course_checkpoints_coords
+                            )
+                        else:
+                            visual_hills = []
+
                         course_generated = True
-                        
                         game_state = GameState.COUNTDOWN; countdown_timer = current_time_s + 3.0; countdown_stage = 1
-                        
+
                         player_start_world_x, player_start_world_y = 0.0, 20.0
                         player_car.reset_position(player_start_world_x, player_start_world_y)
-                        cars_per_row = 2 
-                        row_spacing = player_car.collision_radius * 3.0 
+                        cars_per_row = 2
+                        row_spacing = player_car.collision_radius * 3.0
                         col_spacing = player_car.collision_radius * 2.5
                         for i, ai_car_instance in enumerate(ai_cars):
                             row_num = (i // cars_per_row) + 1
@@ -219,21 +231,22 @@ def main():
                             ai_car_instance.reset_position(ai_start_x, ai_start_y)
 
                         world_offset_x = player_car.world_x; world_offset_y = player_car.world_y
-                        if sounds_loaded: 
+                        if sounds_loaded:
                             if engine_channel: engine_channel.stop()
                             if skid_channel: skid_channel.stop()
                             if sfx_channel and beep_high_sound: sfx_channel.play(beep_high_sound)
-            
+
             elif game_state == GameState.FINISHED:
                 if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                     if new_race_button_rect.collidepoint(event.pos):
                         game_state = GameState.SETUP; course_generated = False
-                        if sounds_loaded and engine_channel and skid_channel: 
+                        visual_hills = []
+                        if sounds_loaded and engine_channel and skid_channel:
                             engine_channel.stop(); skid_channel.stop()
 
         # --- State Updates ---
         if game_state == GameState.SETUP:
-            pass 
+            pass
 
         elif game_state == GameState.COUNTDOWN:
             time_left = countdown_timer - current_time_s; new_stage = 0
@@ -244,7 +257,7 @@ def main():
             if new_stage != countdown_stage:
                 countdown_stage = new_stage
                 if sounds_loaded and sfx_channel:
-                    if countdown_stage <=3 and countdown_stage >=2 : 
+                    if countdown_stage <=3 and countdown_stage >=2 :
                         if beep_high_sound: sfx_channel.play(beep_high_sound)
                     elif countdown_stage == 4:
                         if beep_low_sound: sfx_channel.play(beep_low_sound)
@@ -257,10 +270,10 @@ def main():
                             ai.ai_target_checkpoint_index = 0; ai.last_line_crossing_time = -const.LINE_CROSSING_DEBOUNCE
                             ai.race_finished_for_car = False
                         total_race_start_time = current_time_s
-                        if sounds_loaded and engine_sound and engine_channel: 
+                        if sounds_loaded and engine_sound and engine_channel:
                             engine_channel.play(engine_sound, loops=-1)
                             engine_channel.set_volume(const.ENGINE_MIN_VOL)
-            world_offset_x = player_car.world_x 
+            world_offset_x = player_car.world_x
             world_offset_y = player_car.world_y
 
         elif game_state == GameState.RACING:
@@ -272,28 +285,52 @@ def main():
                     (1.0 if keys[pygame.K_RIGHT] or keys[pygame.K_d] else 0.0) - (1.0 if keys[pygame.K_LEFT] or keys[pygame.K_a] else 0.0),
                     1.0 if keys[pygame.K_SPACE] else 0.0)
             else: player_car.set_controls(0,0.2,0,0)
-            
-            for ai in ai_cars: 
+
+            for ai in ai_cars:
                 ai.update_ai(dt, checkpoints, len(course_checkpoints_coords), total_laps, current_time_s)
-            
+
             cars_to_update_physics = [player_car] + ai_cars
             for car_obj in cars_to_update_physics:
-                car_obj.on_mud = False 
-                car_world_rect = car_obj.get_world_collision_rect() 
-                
+                car_obj.on_mud = False
+                car_world_rect = car_obj.get_world_collision_rect()
+
                 for mud in mud_patches:
                     if car_world_rect.colliderect(mud.rect) and mud.check_collision((car_obj.world_x, car_obj.world_y)):
                         car_obj.on_mud = True; break
-                
-                if not car_obj.is_airborne: 
-                    for ramp_obj in ramps: 
-                        if ramp_obj.check_collision(car_world_rect): 
+
+                if not car_obj.is_airborne:
+                    for ramp_obj in ramps:
+                        if ramp_obj.check_collision(car_world_rect):
                             if car_obj.speed > car_obj.max_car_speed * const.MIN_JUMP_SPEED_FACTOR:
-                                # print(f"DEBUG: Car {'AI' if car_obj.is_ai else 'Player'} trying to jump. Speed: {car_obj.speed:.1f}, MinSpeed: {car_obj.max_car_speed * const.MIN_JUMP_SPEED_FACTOR:.1f}, Airborne: {car_obj.is_airborne}")
-                                car_obj.trigger_jump() 
-                                break 
+                                car_obj.trigger_jump()
+                                break
+                
+                # --- "Over The Top" Hill Collision & Jump Logic ---
+                collided_with_a_crest_this_frame = False # To help manage leaving crests
+                if not car_obj.is_airborne and visual_hills:
+                    for hill in visual_hills:
+                        # Broad-phase check first (car's rect vs hill's rect)
+                        if hill.check_collision(car_world_rect):
+                            # Narrow-phase: check if car center is in the hill's crest
+                            if hill.check_crest_collision(car_obj.world_x, car_obj.world_y):
+                                collided_with_a_crest_this_frame = True # Mark that car is on *a* crest
+                                if car_obj.last_collided_hill_crest != hill: # New crest entry
+                                    min_speed_for_hill_jump = car_obj.max_car_speed * const.MIN_JUMP_SPEED_FACTOR
+                                    if car_obj.speed > min_speed_for_hill_jump:
+                                        car_obj.trigger_jump()
+                                        car_obj.last_collided_hill_crest = hill # Mark this hill's crest as current
+                                        break # Jumped, no need to check other hills this frame for this car
+                                # else: Car is still on the same crest as last frame, do nothing to prevent re-triggering
+                                break # Found the hill crest the car is on, no need to check other hills for crest collision
+                            elif car_obj.last_collided_hill_crest == hill:
+                                # Car was on this hill's crest, but no longer is (still in broad phase of this hill)
+                                car_obj.last_collided_hill_crest = None 
+                        elif car_obj.last_collided_hill_crest == hill:
+                            # Car is no longer even in broad-phase of the hill it last crested
+                            car_obj.last_collided_hill_crest = None
+                # --- END NEW HILL COLLISION LOGIC ---
                                 
-                car_obj.update(dt) 
+                car_obj.update(dt)
             
             for i in range(len(cars_to_update_physics)):
                 for j in range(i + 1, len(cars_to_update_physics)):
@@ -307,9 +344,9 @@ def main():
                         nx = dist_x / current_dist if current_dist != 0 else 1.0
                         ny = dist_y / current_dist if current_dist != 0 else 0.0
                         car1.resolve_collision_with(car2, nx, ny, overlap)
-            
+
             world_offset_x = player_car.world_x; world_offset_y = player_car.world_y
-            
+
             if sounds_loaded and engine_channel and skid_channel and skid_sound:
                 is_skidding = (player_car.is_drifting or player_car.is_handbraking) and not player_car.is_airborne and player_car.speed > 10
                 if is_skidding and not skid_channel.get_busy(): skid_channel.play(skid_sound, loops=-1)
@@ -320,7 +357,7 @@ def main():
                 rpm_influence = 0.5 + 0.5 * rpm_ratio
                 target_volume = const.ENGINE_MIN_VOL + (const.ENGINE_MAX_VOL - const.ENGINE_MIN_VOL) * throttle_influence * rpm_influence
                 engine_channel.set_volume(clamp(target_volume, 0.0, 1.0))
-            
+
             if not player_race_finished: # Player Race Logic
                 car_pos = (player_car.world_x, player_car.world_y); car_prev_pos = (player_car.prev_world_x, player_car.prev_world_y)
                 num_actual_cps = len(course_checkpoints_coords)
@@ -340,14 +377,14 @@ def main():
                                 if player_current_lap >= total_laps:
                                     player_race_finished = True; player_final_total_time = current_time_s - total_race_start_time
                                     game_state = GameState.FINISHED
-                                    if sounds_loaded and engine_channel and skid_channel: 
+                                    if sounds_loaded and engine_channel and skid_channel:
                                         engine_channel.stop(); skid_channel.stop()
                                 else:
                                     player_current_lap += 1; player_next_checkpoint_index = 0; player_lap_start_time = current_time_s
-        
+
         # --- Drawing ---
-        draw_scrolling_track(screen, world_offset_x, world_offset_y)
-        
+        draw_scrolling_track(screen, world_offset_x, world_offset_y, visual_hills)
+
         if game_state == GameState.SETUP:
             title_surf = title_font.render("Race Setup", True, const.WHITE)
             screen.blit(title_surf, (const.CENTER_X - title_surf.get_width()//2, const.SCREEN_HEIGHT * 0.08))
@@ -376,7 +413,8 @@ def main():
             draw_button(screen, difficulty_minus_rect, "<", button_font, const.BUTTON_COLOR, const.BUTTON_TEXT_COLOR, const.BUTTON_HOVER_COLOR)
             draw_button(screen, difficulty_plus_rect, ">", button_font, const.BUTTON_COLOR, const.BUTTON_TEXT_COLOR, const.BUTTON_HOVER_COLOR)
             draw_button(screen, start_button_rect, "Start Race", button_font, const.BUTTON_COLOR, const.BUTTON_TEXT_COLOR, const.BUTTON_HOVER_COLOR)
-            if course_generated: draw_map(screen, player_car, ai_cars, mud_patches, checkpoints, -1, const.START_FINISH_LINE, MAP_RECT_LOCAL, const.WORLD_BOUNDS)
+            if course_generated:
+                draw_map(screen, player_car, ai_cars, mud_patches, checkpoints, -1, const.START_FINISH_LINE, MAP_RECT_LOCAL, const.WORLD_BOUNDS, ramps, visual_hills)
 
         elif game_state == GameState.COUNTDOWN:
             cam_offset_x_cd = world_offset_x; cam_offset_y_cd = world_offset_y
@@ -404,11 +442,11 @@ def main():
                 ai.draw_dust(screen, cam_offset_x_race, cam_offset_y_race)
                 ai.draw_mud_splash(screen, cam_offset_x_race, cam_offset_y_race)
             for mud in mud_patches: mud.draw(screen, cam_offset_x_race, cam_offset_y_race)
-            
-            for ramp_obj in ramps: 
-                ramp_obj.draw(screen, cam_offset_x_race, cam_offset_y_race) 
-            if const.DEBUG_DRAW_RAMPS: # This will draw debug outlines ON TOP of solid ramps if both are true
-                for ramp_obj in ramps: 
+
+            for ramp_obj in ramps:
+                ramp_obj.draw(screen, cam_offset_x_race, cam_offset_y_race)
+            if const.DEBUG_DRAW_RAMPS:
+                for ramp_obj in ramps:
                     ramp_obj.draw_debug(screen, cam_offset_x_race, cam_offset_y_race)
 
             sf_p1_screen = (int(const.START_FINISH_LINE[0][0] - cam_offset_x_race + const.CENTER_X), int(const.START_FINISH_LINE[0][1] - cam_offset_y_race + const.CENTER_Y))
@@ -424,10 +462,10 @@ def main():
                 ai.rotate_and_position_shapes(); ai.draw(screen)
             player_car.screen_x = const.CENTER_X; player_car.screen_y = const.CENTER_Y
             player_car.rotate_and_position_shapes(); player_car.draw(screen)
-            
+
             speed_denom = player_car.max_car_speed if player_car.max_car_speed > 0 else 1.0
-            speed_perc = (player_car.speed / speed_denom) * 100; base_kph = 160
-            disp_kph = (top_speed_options[selected_speed_index] / 100.0) * base_kph * (speed_perc / 100.0)
+            base_kph = 160
+            disp_kph = (player_car.max_car_speed / const.BASE_MAX_CAR_SPEED) * base_kph * (player_car.speed / player_car.max_car_speed if player_car.max_car_speed > 0 else 0)
             speed_txt_surf = font.render(f"Speed: {disp_kph:.0f} kph", True, const.WHITE); screen.blit(speed_txt_surf, (20, const.SCREEN_HEIGHT - 50))
             draw_rpm_gauge(screen, player_car.rpm, const.MAX_RPM, const.IDLE_RPM, RPM_GAUGE_RECT_LOCAL, ui_font_small)
             draw_pedal_indicator(screen, player_car.throttle_input, ACCEL_PEDAL_RECT_LOCAL, const.ACCEL_PEDAL_COLOR, "Accel", ui_font_small)
@@ -445,6 +483,9 @@ def main():
             if player_race_started and not player_race_finished:
                 total_tm_val = current_time_s - total_race_start_time; current_lp_val = current_time_s - player_lap_start_time
                 total_tm_str = format_time(total_tm_val); current_lp_str = format_time(current_lp_val)
+            elif player_race_finished :
+                total_tm_str = format_time(player_final_total_time)
+                if player_lap_times: current_lp_str = format_time(player_lap_times[-1])
             total_tm_txt_surf = font.render(f"Total: {total_tm_str}", True, const.WHITE); screen.blit(total_tm_txt_surf, (const.SCREEN_WIDTH - total_tm_txt_surf.get_width() - 20, 20))
             cur_lap_tm_txt_surf = font.render(f"Lap: {current_lp_str}", True, const.WHITE); screen.blit(cur_lap_tm_txt_surf, (const.SCREEN_WIDTH - cur_lap_tm_txt_surf.get_width() - 20, 60))
             y_lp_offset_ui = 100
@@ -452,30 +493,35 @@ def main():
                 if i_lp >= 5: break
                 lap_n = len(player_lap_times) - i_lp; lp_time_surf_ui = lap_font.render(f"Lap {lap_n}: {format_time(l_time_val)}", True, const.GRAY)
                 screen.blit(lp_time_surf_ui, (const.SCREEN_WIDTH - lp_time_surf_ui.get_width() - 20 , y_lp_offset_ui)); y_lp_offset_ui += 40
-            draw_map(screen, player_car, ai_cars, mud_patches, checkpoints, map_next_cp_idx, const.START_FINISH_LINE, MAP_RECT_LOCAL, const.WORLD_BOUNDS)
+            draw_map(screen, player_car, ai_cars, mud_patches, checkpoints, map_next_cp_idx, const.START_FINISH_LINE, MAP_RECT_LOCAL, const.WORLD_BOUNDS, ramps, visual_hills)
 
         elif game_state == GameState.FINISHED:
             title_surf_fin = title_font.render("Race Finished!", True, const.WHITE); screen.blit(title_surf_fin, (const.CENTER_X - title_surf_fin.get_width()//2, const.SCREEN_HEIGHT * 0.1))
-            total_time_surf_fin = font.render(f"Your Total Time: {format_time(player_final_total_time)}", True, const.WHITE); screen.blit(total_time_surf_fin, (const.CENTER_X - total_time_surf_fin.get_width()//2, const.SCREEN_HEIGHT * 0.25))
-            y_lap_offset_fin = const.SCREEN_HEIGHT * 0.3
+            total_time_surf_fin = font.render(f"Your Total Time: {format_time(player_final_total_time)}", True, const.WHITE); screen.blit(total_time_surf_fin, (const.CENTER_X - total_time_surf_fin.get_width()//2, const.SCREEN_HEIGHT * 0.20))
+            y_lap_offset_fin = const.SCREEN_HEIGHT * 0.28
             lap_header_surf_fin = font.render("Your Lap Times:", True, const.WHITE)
-            screen.blit(lap_header_surf_fin, (const.CENTER_X - lap_header_surf_fin.get_width()//2 , y_lap_offset_fin)); y_lap_offset_fin += 40
+            screen.blit(lap_header_surf_fin, (const.CENTER_X - lap_header_surf_fin.get_width()//2 , y_lap_offset_fin)); y_lap_offset_fin += 35
             for i_fin, l_time_fin in enumerate(player_lap_times):
                 lap_num_fin = i_fin + 1; lap_time_surf_fin = lap_font.render(f"Lap {lap_num_fin}: {format_time(l_time_fin)}", True, const.WHITE)
-                screen.blit(lap_time_surf_fin, (const.CENTER_X - lap_time_surf_fin.get_width()//2 , y_lap_offset_fin)); y_lap_offset_fin += 40
-            y_lap_offset_fin += 20 
+                screen.blit(lap_time_surf_fin, (const.CENTER_X - lap_time_surf_fin.get_width()//2 , y_lap_offset_fin)); y_lap_offset_fin += 35
+            y_lap_offset_fin += 15
             for i_ai_fin, ai_fin in enumerate(ai_cars):
-                ai_header_surf_fin = font.render(f"AI {i_ai_fin+1} ({ai_fin.color}) Lap Times:", True, ai_fin.color) 
-                screen.blit(ai_header_surf_fin, (const.CENTER_X - ai_header_surf_fin.get_width()//2 , y_lap_offset_fin)); y_lap_offset_fin += 40
-                if not ai_fin.lap_times:
+                ai_header_surf_fin = font.render(f"AI {i_ai_fin+1} ({ai_fin.color}) Lap Times:", True, ai_fin.color if ai_fin.color else const.AI_CAR_BODY_COLOR)
+                screen.blit(ai_header_surf_fin, (const.CENTER_X - ai_header_surf_fin.get_width()//2 , y_lap_offset_fin)); y_lap_offset_fin += 35
+                if not ai_fin.lap_times and not ai_fin.race_finished_for_car:
                     no_time_surf_fin = lap_font.render("Did not finish", True, const.GRAY)
-                    screen.blit(no_time_surf_fin, (const.CENTER_X - no_time_surf_fin.get_width()//2 , y_lap_offset_fin)); y_lap_offset_fin += 40
-                else:
-                    for lap_idx_fin, l_time_ai_fin in enumerate(ai_fin.lap_times):
-                        lap_num_ai_fin = lap_idx_fin + 1; lap_time_surf_ai_fin = lap_font.render(f"Lap {lap_num_ai_fin}: {format_time(l_time_ai_fin)}", True, const.WHITE)
-                        screen.blit(lap_time_surf_ai_fin, (const.CENTER_X - lap_time_surf_ai_fin.get_width()//2 , y_lap_offset_fin)); y_lap_offset_fin += 40
+                    screen.blit(no_time_surf_fin, (const.CENTER_X - no_time_surf_fin.get_width()//2 , y_lap_offset_fin)); y_lap_offset_fin += 35
+                elif ai_fin.race_finished_for_car:
+                    ai_total_time = sum(ai_fin.lap_times)
+                    ai_total_str = format_time(ai_total_time)
+                    ai_total_surf = lap_font.render(f"Total: {ai_total_str}", True, const.WHITE)
+                    screen.blit(ai_total_surf, (const.CENTER_X - ai_total_surf.get_width()//2, y_lap_offset_fin)); y_lap_offset_fin += 35
+
+                for lap_idx_fin, l_time_ai_fin in enumerate(ai_fin.lap_times):
+                    lap_num_ai_fin = lap_idx_fin + 1; lap_time_surf_ai_fin = lap_font.render(f"Lap {lap_num_ai_fin}: {format_time(l_time_ai_fin)}", True, const.WHITE)
+                    screen.blit(lap_time_surf_ai_fin, (const.CENTER_X - lap_time_surf_ai_fin.get_width()//2 , y_lap_offset_fin)); y_lap_offset_fin += 35
                 y_lap_offset_fin += 10
-            new_race_button_rect.top = y_lap_offset_fin + 30
+            new_race_button_rect.top = max(const.SCREEN_HEIGHT * 0.7, y_lap_offset_fin + 20)
             draw_button(screen, new_race_button_rect, "New Race Setup", button_font, const.BUTTON_COLOR, const.BUTTON_TEXT_COLOR, const.BUTTON_HOVER_COLOR)
 
         pygame.display.flip()

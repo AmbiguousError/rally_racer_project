@@ -1,4 +1,4 @@
-# ui_elements.py
+# rally_racer_project/ui_elements.py
 # This file contains functions for drawing UI elements like buttons, map, gauges, etc.
 
 import pygame
@@ -6,29 +6,36 @@ import math
 
 # Assuming constants.py and utils.py are in the parent directory or project root is in PYTHONPATH
 import constants as const
-# MODIFIED: Added 'clamp' to the import from utils
-from utils import deg_to_rad, clamp, lerp # lerp might also be used if not already imported and needed
+from utils import deg_to_rad, clamp, lerp
 
 # --- Track Background Scrolling Function ---
-def draw_scrolling_track(surface, offset_x, offset_y):
-    """Draws the patterned dirt background that scrolls with the camera."""
-    surface.fill(const.DIRT_COLOR)
-    line_spacing = 50
-    line_color = const.DARK_DIRT_COLOR
-    line_width = 2
+def draw_scrolling_track(surface, offset_x, offset_y, visual_hills_list=None):
+    """
+    Draws the patterned grass background that scrolls with the camera.
+    Optionally draws visual hills on top of the grass.
+    """
+    surface.fill(const.GRASS_COLOR)
 
-    start_y = -(offset_y % line_spacing)
-    for y_pos in range(int(start_y), const.SCREEN_HEIGHT, line_spacing):
-        pygame.draw.line(surface, line_color, (0, y_pos), (const.SCREEN_WIDTH, y_pos), line_width)
+    line_spacing_grass = 60
+    line_color_grass = const.LIGHT_GRASS_COLOR
+    line_width_grass = 1
 
-    start_x = -(offset_x % line_spacing)
-    for x_pos in range(int(start_x), const.SCREEN_WIDTH, line_spacing):
-        pygame.draw.line(surface, line_color, (x_pos, 0), (x_pos, const.SCREEN_HEIGHT), line_width)
+    start_y_grass_abs = -(offset_y % line_spacing_grass)
+    for y_offset in range(int(start_y_grass_abs), const.SCREEN_HEIGHT, line_spacing_grass):
+        pygame.draw.line(surface, line_color_grass, (0, y_offset), (const.SCREEN_WIDTH, y_offset), line_width_grass)
+
+    start_x_grass_abs = -(offset_x % line_spacing_grass)
+    for x_offset in range(int(start_x_grass_abs), const.SCREEN_WIDTH, line_spacing_grass):
+        pygame.draw.line(surface, line_color_grass, (x_offset, 0), (x_offset, const.SCREEN_HEIGHT), line_width_grass)
+
+    if visual_hills_list:
+        for hill in visual_hills_list:
+            hill.draw(surface, offset_x, offset_y)
 
 # --- Map Drawing Function ---
-def draw_map(surface, player_car, ai_cars, mud_patches, checkpoints, next_checkpoint_index_on_list, start_finish_line_coords, map_display_rect, world_game_bounds):
+def draw_map(surface, player_car, ai_cars, mud_patches, checkpoints, next_checkpoint_index_on_list, start_finish_line_coords, map_display_rect, world_game_bounds, ramps_list=None, visual_hills_list=None):
     map_surface = pygame.Surface(map_display_rect.size, pygame.SRCALPHA)
-    map_surface.fill(const.MAP_BG_COLOR) 
+    map_surface.fill(const.MAP_BG_COLOR)
     pygame.draw.rect(surface, const.MAP_BORDER_COLOR, map_display_rect, 1)
 
     map_world_scale_x = map_display_rect.width / (2 * world_game_bounds)
@@ -46,44 +53,62 @@ def draw_map(surface, player_car, ai_cars, mud_patches, checkpoints, next_checkp
     for i, cp in enumerate(checkpoints):
         map_x, map_y = world_to_map(cp.world_x, cp.world_y)
         is_next = (i == next_checkpoint_index_on_list)
-        color_to_use = cp.color 
-        if is_next and not cp.is_gate: 
+        color_to_use = cp.color
+        if is_next and not cp.is_gate:
             color_to_use = const.NEXT_CHECKPOINT_INDICATOR_COLOR
         if 0 <= map_x <= map_display_rect.width and 0 <= map_y <= map_display_rect.height:
             pygame.draw.circle(map_surface, color_to_use, (map_x, map_y), const.MAP_CHECKPOINT_MARKER_RADIUS)
-            if not cp.is_gate: 
+            if not cp.is_gate:
                 pygame.draw.circle(map_surface, const.BLACK, (map_x, map_y), const.MAP_CHECKPOINT_MARKER_RADIUS, 1)
 
     for mud in mud_patches:
         map_x, map_y = world_to_map(mud.world_x, mud.world_y)
-        map_radius = max(1, int((mud.size / 2.0) * map_world_scale_x)) 
+        map_radius = max(1, int((mud.size / 2.0) * map_world_scale_x)) # MudPatch still uses .size
         if 0 <= map_x <= map_display_rect.width and 0 <= map_y <= map_display_rect.height:
             pygame.draw.circle(map_surface, const.DARK_MUD_COLOR, (map_x, map_y), map_radius)
+
+    if ramps_list:
+        for ramp in ramps_list:
+            map_x, map_y = world_to_map(ramp.world_x, ramp.world_y)
+            map_ramp_size = max(1, int((ramp.width / 2.0) * map_world_scale_x))
+            if 0 <= map_x <= map_display_rect.width and 0 <= map_y <= map_display_rect.height:
+                pygame.draw.rect(map_surface, const.RAMP_COLOR, (map_x - map_ramp_size//2, map_y - map_ramp_size//2, map_ramp_size, map_ramp_size))
+
+    if visual_hills_list:
+        for hill in visual_hills_list:
+            map_x, map_y = world_to_map(hill.world_x, hill.world_y)
+            # --- THIS IS THE CORRECTED LINE (Original error was here) ---
+            map_radius = max(1, int((hill.diameter / 2.0) * map_world_scale_x)) # Use hill.diameter
+            # --- END CORRECTION ---
+            if 0 <= map_x <= map_display_rect.width and 0 <= map_y <= map_display_rect.height:
+                hill_map_color = (*const.HILL_COLOR_NO_GRASS[:3], 100)
+                pygame.draw.circle(map_surface, hill_map_color, (map_x, map_y), map_radius)
+                pygame.draw.circle(map_surface, const.DARK_HILL_COLOR, (map_x, map_y), map_radius, 1)
 
     car_map_x, car_map_y = world_to_map(player_car.world_x, player_car.world_y)
     if 0 <= car_map_x <= map_display_rect.width and 0 <= car_map_y <= map_display_rect.height:
         car_angle_rad = deg_to_rad(player_car.heading)
-        p1 = (car_map_x + math.cos(car_angle_rad) * const.MAP_CAR_MARKER_SIZE, 
+        p1 = (car_map_x + math.cos(car_angle_rad) * const.MAP_CAR_MARKER_SIZE,
               car_map_y + math.sin(car_angle_rad) * const.MAP_CAR_MARKER_SIZE)
-        p2 = (car_map_x + math.cos(car_angle_rad + 2.356) * const.MAP_CAR_MARKER_SIZE * 0.6, 
+        p2 = (car_map_x + math.cos(car_angle_rad + 2.356) * const.MAP_CAR_MARKER_SIZE * 0.6,
               car_map_y + math.sin(car_angle_rad + 2.356) * const.MAP_CAR_MARKER_SIZE * 0.6)
-        p3 = (car_map_x + math.cos(car_angle_rad - 2.356) * const.MAP_CAR_MARKER_SIZE * 0.6, 
+        p3 = (car_map_x + math.cos(car_angle_rad - 2.356) * const.MAP_CAR_MARKER_SIZE * 0.6,
               car_map_y + math.sin(car_angle_rad - 2.356) * const.MAP_CAR_MARKER_SIZE * 0.6)
         try:
             pygame.draw.polygon(map_surface, const.MAP_CAR_COLOR, [(int(p1[0]), int(p1[1])), (int(p2[0]), int(p2[1])), (int(p3[0]), int(p3[1]))])
-        except ValueError: 
+        except ValueError:
             pygame.draw.circle(map_surface, const.MAP_CAR_COLOR, (car_map_x, car_map_y), 2)
 
     for ai_car in ai_cars:
         ai_car_map_x, ai_car_map_y = world_to_map(ai_car.world_x, ai_car.world_y)
         if 0 <= ai_car_map_x <= map_display_rect.width and 0 <= ai_car_map_y <= map_display_rect.height:
             ai_angle_rad = deg_to_rad(ai_car.heading)
-            map_marker_color = ai_car.color 
-            ai_p1 = (ai_car_map_x + math.cos(ai_angle_rad) * const.MAP_CAR_MARKER_SIZE, 
+            map_marker_color = ai_car.color
+            ai_p1 = (ai_car_map_x + math.cos(ai_angle_rad) * const.MAP_CAR_MARKER_SIZE,
                      ai_car_map_y + math.sin(ai_angle_rad) * const.MAP_CAR_MARKER_SIZE)
-            ai_p2 = (ai_car_map_x + math.cos(ai_angle_rad + 2.356) * const.MAP_CAR_MARKER_SIZE * 0.6, 
+            ai_p2 = (ai_car_map_x + math.cos(ai_angle_rad + 2.356) * const.MAP_CAR_MARKER_SIZE * 0.6,
                      ai_car_map_y + math.sin(ai_angle_rad + 2.356) * const.MAP_CAR_MARKER_SIZE * 0.6)
-            ai_p3 = (ai_car_map_x + math.cos(ai_angle_rad - 2.356) * const.MAP_CAR_MARKER_SIZE * 0.6, 
+            ai_p3 = (ai_car_map_x + math.cos(ai_angle_rad - 2.356) * const.MAP_CAR_MARKER_SIZE * 0.6,
                      ai_car_map_y + math.sin(ai_angle_rad - 2.356) * const.MAP_CAR_MARKER_SIZE * 0.6)
             try:
                 pygame.draw.polygon(map_surface, map_marker_color, [(int(ai_p1[0]),int(ai_p1[1])), (int(ai_p2[0]),int(ai_p2[1])), (int(ai_p3[0]),int(ai_p3[1]))])
@@ -111,13 +136,12 @@ def format_time(seconds):
 
 def draw_rpm_gauge(surface, rpm, max_rpm_val, idle_rpm_val, display_rect, font_to_use):
     pygame.draw.rect(surface, const.PEDAL_BG_COLOR, display_rect)
-    pygame.draw.rect(surface, const.BLACK, display_rect, 1) 
+    pygame.draw.rect(surface, const.BLACK, display_rect, 1)
 
     rpm_range = max_rpm_val - idle_rpm_val
     rpm_ratio = 0.0
     if rpm_range > 0:
-        # clamp is now defined because it's imported from utils
-        rpm_ratio = clamp((rpm - idle_rpm_val) / rpm_range, 0.0, 1.0) 
+        rpm_ratio = clamp((rpm - idle_rpm_val) / rpm_range, 0.0, 1.0)
     
     bar_width = int(display_rect.width * rpm_ratio)
     bar_rect = pygame.Rect(display_rect.left, display_rect.top, bar_width, display_rect.height)
@@ -127,34 +151,17 @@ def draw_rpm_gauge(surface, rpm, max_rpm_val, idle_rpm_val, display_rect, font_t
     elif rpm_ratio > 0.7: bar_color = const.RPM_BAR_HIGH_COLOR
     
     pygame.draw.rect(surface, bar_color, bar_rect)
-    
-    # Optional: Draw RPM text next to the gauge (can be done in main.py for more control)
-    # rpm_text_str = f"RPM: {int(rpm)}"
-    # text_surf = font_to_use.render(rpm_text_str, True, const.WHITE)
-    # text_rect = text_surf.get_rect(midleft=(display_rect.right + 10, display_rect.centery))
-    # surface.blit(text_surf, text_rect)
 
 def draw_pedal_indicator(surface, value, display_rect, active_color, label, font_to_use):
-    pygame.draw.rect(surface, const.PEDAL_BG_COLOR, display_rect) 
+    pygame.draw.rect(surface, const.PEDAL_BG_COLOR, display_rect)
     
     fill_height = int(display_rect.height * value)
     fill_rect = pygame.Rect(display_rect.left, display_rect.bottom - fill_height, display_rect.width, fill_height)
-    pygame.draw.rect(surface, active_color, fill_rect) 
+    pygame.draw.rect(surface, active_color, fill_rect)
     
-    pygame.draw.rect(surface, const.BLACK, display_rect, 1) 
-    
-    # Optional: Label below the pedal
-    # text_surf = font_to_use.render(label, True, const.WHITE)
-    # text_rect = text_surf.get_rect(midtop=(display_rect.centerx, display_rect.bottom + 4))
-    # surface.blit(text_surf, text_rect)
+    pygame.draw.rect(surface, const.BLACK, display_rect, 1)
 
 def draw_handbrake_indicator(surface, active, position_tuple, radius, font_to_use):
     color_to_use = const.HANDBRAKE_INDICATOR_COLOR if active else const.GRAY
     pygame.draw.circle(surface, color_to_use, position_tuple, radius)
-    pygame.draw.circle(surface, const.BLACK, position_tuple, radius, 1) 
-    
-    # Optional: Text inside the circle
-    # text_surf = font_to_use.render("HB", True, const.BLACK if active else const.DARK_DIRT_COLOR)
-    # text_rect = text_surf.get_rect(center=position_tuple)
-    # surface.blit(text_surf, text_rect)
-
+    pygame.draw.circle(surface, const.BLACK, position_tuple, radius, 1)
