@@ -15,7 +15,8 @@ from utils import (
 from sound_manager import generate_sound_array
 from course_generator import (
     generate_random_checkpoints, generate_random_mud_patches,
-    generate_random_ramps, is_too_close, generate_random_hills
+    generate_random_ramps, is_too_close, generate_random_hills,
+    generate_road_path # Added for road generation
 )
 from ui_elements import (
     draw_button, draw_rpm_gauge, draw_pedal_indicator,
@@ -49,8 +50,7 @@ def main():
         print(f"Error creating tire_tracks_surface (possibly too large for hardware): {e}")
         print(f"Attempted size: {world_surface_size}")
         tire_tracks_surface = pygame.Surface((const.SCREEN_WIDTH, const.SCREEN_HEIGHT), pygame.SRCALPHA)
-        tire_tracks_surface.fill((0,0,0,0))
-
+        tire_tracks_surface.fill((0,0,0,0)) 
 
     font = pygame.font.Font(None, 40)
     title_font = pygame.font.Font(None, 72)
@@ -66,20 +66,15 @@ def main():
         beep_low_arr = generate_sound_array(const.BEEP_FREQ_LOW, const.BEEP_DURATION_MS, waveform='sine', sample_rate=const.SAMPLE_RATE)
         skid_arr = generate_sound_array(0, const.SKID_DURATION_MS, waveform='noise', sample_rate=const.SAMPLE_RATE)
         engine_arr = generate_sound_array(const.ENGINE_BASE_FREQ, 1000, waveform='engine', sample_rate=const.SAMPLE_RATE)
-
         beep_high_sound = pygame.mixer.Sound(buffer=beep_high_arr)
         beep_low_sound = pygame.mixer.Sound(buffer=beep_low_arr)
         skid_sound = pygame.mixer.Sound(buffer=skid_arr)
         engine_sound = pygame.mixer.Sound(buffer=engine_arr)
-
         skid_sound.set_volume(const.SKID_VOL)
-        engine_channel = pygame.mixer.Channel(0)
-        skid_channel = pygame.mixer.Channel(1)
-        sfx_channel = pygame.mixer.Channel(2)
+        engine_channel = pygame.mixer.Channel(0); skid_channel = pygame.mixer.Channel(1); sfx_channel = pygame.mixer.Channel(2)
         sounds_loaded = True
     except Exception as e:
-        print(f"Error initializing sound: {e}")
-        sounds_loaded = False
+        print(f"Error initializing sound: {e}"); sounds_loaded = False
         beep_high_sound = beep_low_sound = skid_sound = engine_sound = None
         engine_channel = skid_channel = sfx_channel = None
 
@@ -93,6 +88,8 @@ def main():
     ai_cars = []
     mud_patches = []; checkpoints = []; course_checkpoints_coords = []; ramps = []
     visual_hills = []
+    road_segments_polygons = []
+    centerline_road_points = [] 
 
     selected_laps = const.DEFAULT_RACE_LAPS
     top_speed_options = [50, 75, 100, 125, 150, 200, 250]
@@ -155,54 +152,23 @@ def main():
             if event.type == pygame.QUIT: running = False
             if game_state == GameState.SETUP:
                 if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                    # <<< DEBUG PRINT STATEMENTS ADDED HERE >>>
-                    print(f"DEBUG: Mouse clicked at: {event.pos}") 
+                    # print(f"DEBUG: Mouse clicked at: {event.pos}") 
+                    # print(f"DEBUG: Laps Minus Rect: {laps_minus_rect} | Collides: {laps_minus_rect.collidepoint(event.pos)}")
+                    # ... more debug prints if needed for buttons ...
 
-                    print(f"DEBUG: Laps Minus Rect: {laps_minus_rect} | Collides: {laps_minus_rect.collidepoint(event.pos)}")
-                    print(f"DEBUG: Laps Plus Rect: {laps_plus_rect} | Collides: {laps_plus_rect.collidepoint(event.pos)}")
-                    print(f"DEBUG: Speed Minus Rect: {speed_minus_rect} | Collides: {speed_minus_rect.collidepoint(event.pos)}")
-                    print(f"DEBUG: Speed Plus Rect: {speed_plus_rect} | Collides: {speed_plus_rect.collidepoint(event.pos)}")
-                    # Add similar prints for other option buttons if needed
-
-                    if laps_minus_rect.collidepoint(event.pos):
-                        print("DEBUG: Laps Minus Button Action!")
-                        selected_laps = max(1, selected_laps - 1)
-                    elif laps_plus_rect.collidepoint(event.pos):
-                        print("DEBUG: Laps Plus Button Action!")
-                        selected_laps = min(10, selected_laps + 1)
-                    elif speed_minus_rect.collidepoint(event.pos):
-                        print("DEBUG: Speed Minus Button Action!")
-                        selected_speed_index = max(0, selected_speed_index - 1)
-                    elif speed_plus_rect.collidepoint(event.pos):
-                        print("DEBUG: Speed Plus Button Action!")
-                        selected_speed_index = min(len(top_speed_options) - 1, selected_speed_index + 1)
-                    elif grip_minus_rect.collidepoint(event.pos):
-                        print("DEBUG: Grip Minus Button Action!")
-                        selected_grip_index = max(0, selected_grip_index - 1)
-                    elif grip_plus_rect.collidepoint(event.pos):
-                        print("DEBUG: Grip Plus Button Action!")
-                        selected_grip_index = min(len(grip_options) - 1, selected_grip_index + 1)
-                    elif checkpoints_minus_rect.collidepoint(event.pos):
-                        print("DEBUG: Checkpoints Minus Button Action!")
-                        selected_num_checkpoints = max(1, selected_num_checkpoints - 1)
-                    elif checkpoints_plus_rect.collidepoint(event.pos):
-                        print("DEBUG: Checkpoints Plus Button Action!")
-                        selected_num_checkpoints = min(max_checkpoints, selected_num_checkpoints + 1)
-                    elif ai_minus_rect.collidepoint(event.pos):
-                        print("DEBUG: AI Minus Button Action!")
-                        selected_num_ai = max(0, selected_num_ai - 1)
-                    elif ai_plus_rect.collidepoint(event.pos):
-                        print("DEBUG: AI Plus Button Action!")
-                        selected_num_ai = min(max_ai, selected_num_ai + 1)
-                    elif difficulty_minus_rect.collidepoint(event.pos):
-                        print("DEBUG: Difficulty Minus Button Action!")
-                        selected_difficulty_index = (selected_difficulty_index - 1 + len(difficulty_options)) % len(difficulty_options)
-                    elif difficulty_plus_rect.collidepoint(event.pos):
-                        print("DEBUG: Difficulty Plus Button Action!")
-                        selected_difficulty_index = (selected_difficulty_index + 1) % len(difficulty_options)
-                    # <<< END DEBUG PRINT STATEMENTS (for actions) >>>
+                    if laps_minus_rect.collidepoint(event.pos): selected_laps = max(1, selected_laps - 1)
+                    elif laps_plus_rect.collidepoint(event.pos): selected_laps = min(10, selected_laps + 1)
+                    elif speed_minus_rect.collidepoint(event.pos): selected_speed_index = max(0, selected_speed_index - 1)
+                    elif speed_plus_rect.collidepoint(event.pos): selected_speed_index = min(len(top_speed_options) - 1, selected_speed_index + 1)
+                    elif grip_minus_rect.collidepoint(event.pos): selected_grip_index = max(0, selected_grip_index - 1)
+                    elif grip_plus_rect.collidepoint(event.pos): selected_grip_index = min(len(grip_options) - 1, selected_grip_index + 1)
+                    elif checkpoints_minus_rect.collidepoint(event.pos): selected_num_checkpoints = max(1, selected_num_checkpoints - 1)
+                    elif checkpoints_plus_rect.collidepoint(event.pos): selected_num_checkpoints = min(max_checkpoints, selected_num_checkpoints + 1)
+                    elif ai_minus_rect.collidepoint(event.pos): selected_num_ai = max(0, selected_num_ai - 1)
+                    elif ai_plus_rect.collidepoint(event.pos): selected_num_ai = min(max_ai, selected_num_ai + 1)
+                    elif difficulty_minus_rect.collidepoint(event.pos): selected_difficulty_index = (selected_difficulty_index - 1 + len(difficulty_options)) % len(difficulty_options)
+                    elif difficulty_plus_rect.collidepoint(event.pos): selected_difficulty_index = (selected_difficulty_index + 1) % len(difficulty_options)
                     elif start_button_rect.collidepoint(event.pos):
-                        print("DEBUG: Start Race Button Action!")
                         if tire_tracks_surface:
                             tire_tracks_surface.fill((0, 0, 0, 0))
                         player_car.apply_setup(top_speed_options[selected_speed_index], grip_options[selected_grip_index])
@@ -228,6 +194,15 @@ def main():
                                 const.START_FINISH_LINE, course_checkpoints_coords
                             )
                         else: visual_hills = []
+                        
+                        if hasattr(const, 'ROAD_WIDTH'):
+                            centerline_road_points, road_segments_polygons = generate_road_path(
+                                checkpoints, const.START_FINISH_LINE, const.ROAD_WIDTH
+                            )
+                        else:
+                            centerline_road_points = []
+                            road_segments_polygons = []
+
                         course_generated = True
                         game_state = GameState.COUNTDOWN; countdown_timer = current_time_s + 3.0; countdown_stage = 1
                         player_start_world_x, player_start_world_y = 0.0, 20.0
@@ -242,13 +217,13 @@ def main():
                             if engine_channel: engine_channel.stop()
                             if skid_channel: skid_channel.stop()
                             if sfx_channel and beep_high_sound: sfx_channel.play(beep_high_sound)
-                    # else: # To see if click didn't match any button
-                    #     print("DEBUG: Click in SETUP state did not match any button rect.")
-
             elif game_state == GameState.FINISHED:
                 if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                     if new_race_button_rect.collidepoint(event.pos):
-                        game_state = GameState.SETUP; course_generated = False; visual_hills = []
+                        game_state = GameState.SETUP; course_generated = False
+                        visual_hills = []
+                        road_segments_polygons = [] 
+                        centerline_road_points = []
                         if sounds_loaded and engine_channel and skid_channel:
                             engine_channel.stop(); skid_channel.stop()
 
@@ -382,7 +357,10 @@ def main():
                                 else:
                                     player_current_lap += 1; player_next_checkpoint_index = 0; player_lap_start_time = current_time_s
 
-        draw_scrolling_track(screen, world_offset_x, world_offset_y, visual_hills)
+        # --- Drawing ---
+        # Pass road_segments_polygons to draw_scrolling_track
+        draw_scrolling_track(screen, world_offset_x, world_offset_y, visual_hills, road_segments_polygons) # Added road_segments_polygons
+
         if tire_tracks_surface and (game_state == GameState.RACING or game_state == GameState.COUNTDOWN or game_state == GameState.FINISHED):
             src_rect_x = (world_offset_x - const.CENTER_X) + const.WORLD_BOUNDS
             src_rect_y = (world_offset_y - const.CENTER_Y) + const.WORLD_BOUNDS
@@ -418,7 +396,7 @@ def main():
             draw_button(screen, difficulty_plus_rect, ">", button_font, const.BUTTON_COLOR, const.BUTTON_TEXT_COLOR, const.BUTTON_HOVER_COLOR)
             draw_button(screen, start_button_rect, "Start Race", button_font, const.BUTTON_COLOR, const.BUTTON_TEXT_COLOR, const.BUTTON_HOVER_COLOR)
             if course_generated:
-                draw_map(screen, player_car, ai_cars, mud_patches, checkpoints, -1, const.START_FINISH_LINE, MAP_RECT_LOCAL, const.WORLD_BOUNDS, ramps, visual_hills)
+                draw_map(screen, player_car, ai_cars, mud_patches, checkpoints, -1, const.START_FINISH_LINE, MAP_RECT_LOCAL, const.WORLD_BOUNDS, ramps, visual_hills) # road data not passed to map yet
 
         elif game_state == GameState.COUNTDOWN:
             cam_offset_x_cd = world_offset_x; cam_offset_y_cd = world_offset_y
@@ -492,7 +470,7 @@ def main():
                 if i_lp >= 5: break
                 lap_n = len(player_lap_times) - i_lp; lp_time_surf_ui = lap_font.render(f"Lap {lap_n}: {format_time(l_time_val)}", True, const.GRAY)
                 screen.blit(lp_time_surf_ui, (const.SCREEN_WIDTH - lp_time_surf_ui.get_width() - 20 , y_lp_offset_ui)); y_lp_offset_ui += 40
-            draw_map(screen, player_car, ai_cars, mud_patches, checkpoints, map_next_cp_idx, const.START_FINISH_LINE, MAP_RECT_LOCAL, const.WORLD_BOUNDS, ramps, visual_hills)
+            draw_map(screen, player_car, ai_cars, mud_patches, checkpoints, map_next_cp_idx, const.START_FINISH_LINE, MAP_RECT_LOCAL, const.WORLD_BOUNDS, ramps, visual_hills) # road data not passed to map yet
 
         elif game_state == GameState.FINISHED:
             title_surf_fin = title_font.render("Race Finished!", True, const.WHITE); screen.blit(title_surf_fin, (const.CENTER_X - title_surf_fin.get_width()//2, const.SCREEN_HEIGHT * 0.1))

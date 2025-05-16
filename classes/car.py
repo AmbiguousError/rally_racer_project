@@ -6,7 +6,7 @@ import random
 import math
 from collections import deque
 
-import constants as const # Ensure this imports your modified constants.py
+import constants as const
 from utils import (
     deg_to_rad, rad_to_deg, angle_difference, normalize_angle,
     lerp, distance_sq, clamp, check_line_crossing
@@ -16,7 +16,6 @@ from .particle import DustParticle, MudParticle
 
 class Car:
     def __init__(self, x, y, is_ai=False, unique_body_color=None):
-        # ... (all existing __init__ attributes should be here)
         self.screen_x = x
         self.screen_y = y
         self.world_x = 0.0
@@ -37,12 +36,12 @@ class Car:
 
         self.is_drifting = False
         self.is_handbraking = False
-        self.on_mud = False # This flag is set in main.py
-        self.is_ai = is_ai
+        self.on_mud = False # This flag is set by main.py based on collision
+        self.is_ai = is_ai  # Crucial for AI behavior and setup variations
         self.is_airborne = False
         self.airborne_timer = 0.0
-        self.initial_airborne_duration_this_jump = 0.0
-        self.last_collided_hill_crest = None
+        self.initial_airborne_duration_this_jump = 0.0 # Stores total duration for current jump's visuals
+        self.last_collided_hill_crest = None # For "over the top" hill jump logic
 
         self.mass = 1.0
 
@@ -51,11 +50,13 @@ class Car:
         else:
             self.color = const.CAR_BODY_COLOR
 
+        # Base shapes (defined once)
         self.base_shape_body = [(22, 0), (20, -6), (10, -9), (-12, -9), (-20, -6), (-22, 0), (-20, 6), (-12, 9), (10, 9), (20, 6)]
         self.base_shape_window = [(12, -6), (8, -6), (-8, -6), (-10, -4), (-10, 4), (-8, 6), (8, 6), (12, 4)]
         self.base_shape_tires = [(12, -10, 6, 4), (12, 10, 6, 4), (-12, -10, 6, 4), (-12, 10, 6, 4)]
         self.base_shape_spoiler = [(-18, -12), (-15, -12), (-15, 12), (-18, 12)]
 
+        # Rotated shapes (initialized, updated by rotate_and_position_shapes)
         self.rotated_shape_body = self.base_shape_body[:]
         self.rotated_shape_window = self.base_shape_window[:]
         self.rotated_shape_tires = [[(0,0)]*4 for _ in self.base_shape_tires]
@@ -63,11 +64,13 @@ class Car:
 
         self.collision_radius = 18
 
+        # Particle effect related attributes
         self.dust_particles = deque()
         self.time_since_last_dust = 0.0
         self.mud_particles = deque()
         self.time_since_last_mud = 0.0
 
+        # Race progress attributes
         self.ai_target_checkpoint_index = 0
         self.current_lap = 0
         self.lap_times = []
@@ -76,6 +79,7 @@ class Car:
         self.race_finished_for_car = False
         self.last_line_crossing_time = -const.LINE_CROSSING_DEBOUNCE
 
+        # AI behavior parameters
         self.ai_lookahead_factor = const.BASE_AI_LOOKAHEAD_FACTOR
         self.ai_turn_threshold = const.BASE_AI_TURN_THRESHOLD
         self.ai_brake_factor = const.BASE_AI_BRAKE_FACTOR
@@ -83,6 +87,7 @@ class Car:
         self.ai_throttle_control = const.BASE_AI_THROTTLE_CONTROL
         self.ai_mud_reaction = const.BASE_AI_MUD_REACTION
 
+        # Car performance parameters (initialized with base values, modified by apply_setup)
         self.max_car_speed = const.BASE_MAX_CAR_SPEED
         self.engine_power = const.BASE_ENGINE_POWER
         self.brake_power = const.BASE_BRAKE_POWER
@@ -92,67 +97,78 @@ class Car:
         self.handbrake_side_grip_loss = const.BASE_HANDBRAKE_SIDE_GRIP_LOSS
         self.drift_threshold_speed = self.max_car_speed * 0.25
         self.dust_spawn_speed_threshold = self.max_car_speed * 0.05
-    
-    # ... (apply_setup, apply_ai_difficulty, reset_position, set_controls, update_ai methods as before) ...
+
     def apply_setup(self, top_speed_percent, grip_percent):
         speed_scale = top_speed_percent / 100.0
         self.max_car_speed = const.BASE_MAX_CAR_SPEED * speed_scale
-        self.engine_power = const.BASE_ENGINE_POWER * (speed_scale ** 1.5)
+        self.engine_power = const.BASE_ENGINE_POWER * (speed_scale ** 1.5) # Power scales more than linearly
         self.brake_power = const.BASE_BRAKE_POWER * (speed_scale ** 1.5)
+
         grip_scale = grip_percent / 100.0
-        grip_clamped = clamp(grip_scale, 0.5, 2.5)
-        min_friction_val = 0.80; max_friction_val = 0.98
+        grip_clamped = clamp(grip_scale, 0.5, 2.5) # Clamp grip effect to avoid extremes
+
+        # Adjust friction based on grip_clamped (example scaling)
+        min_friction_val = 0.80 # More slippery
+        max_friction_val = 0.98 # Very grippy
         self.friction = lerp(min_friction_val, max_friction_val, (grip_clamped - 0.5) / 2.0)
+
+        # Adjust drift/handbrake multipliers based on grip
         self.drift_friction_multiplier = lerp(0.85, 0.99, (grip_clamped - 0.5) / 2.0)
         self.handbrake_friction_multiplier = lerp(0.75, 0.97, (grip_clamped - 0.5) / 2.0)
-        self.handbrake_side_grip_loss = lerp(0.6, 0.98, (grip_clamped - 0.5) / 2.0)
-        if self.is_ai:
-            speed_variation_factor = random.uniform(0.95, 1.05)
+        self.handbrake_side_grip_loss = lerp(0.6, 0.98, (grip_clamped - 0.5) / 2.0) # Higher value = less side grip loss
+
+        if self.is_ai: # Apply slight random variations to AI cars for diversity
+            speed_variation_factor = random.uniform(0.95, 1.05) # +/- 5% speed
             self.max_car_speed *= speed_variation_factor
-            power_variation_factor = random.uniform(0.93, 1.07)
+            power_variation_factor = random.uniform(0.93, 1.07) # +/- 7% power
             self.engine_power *= power_variation_factor
-        self.drift_threshold_speed = self.max_car_speed * 0.25
-        self.dust_spawn_speed_threshold = self.max_car_speed * 0.05
+            # AI grip can also be varied if desired
+
+        # Recalculate speed-dependent thresholds
+        self.drift_threshold_speed = self.max_car_speed * 0.25 # Example: 25% of max speed
+        self.dust_spawn_speed_threshold = self.max_car_speed * 0.05 # Example: 5% of max speed
 
     def apply_ai_difficulty(self, difficulty_index, difficulty_options):
         if not self.is_ai: return
         difficulty = difficulty_options[difficulty_index]
+
+        # Base these off the global defaults and then scale
+        self.ai_throttle_control = const.BASE_AI_THROTTLE_CONTROL
+        self.ai_brake_factor = const.BASE_AI_BRAKE_FACTOR
+        self.ai_steer_sharpness = const.BASE_AI_STEER_SHARPNESS
+        self.ai_mud_reaction = const.BASE_AI_MUD_REACTION
+        self.ai_lookahead_factor = const.BASE_AI_LOOKAHEAD_FACTOR
+        self.ai_turn_threshold = const.BASE_AI_TURN_THRESHOLD
+
         if difficulty == "Easy":
-            self.ai_throttle_control = 0.78; self.ai_brake_factor = 0.85
-            self.ai_steer_sharpness = 0.45; self.ai_mud_reaction = 0.8
-            self.ai_lookahead_factor = 1.0; self.ai_turn_threshold = 45
-        elif difficulty == "Medium":
-            self.ai_throttle_control = const.BASE_AI_THROTTLE_CONTROL * 0.90
-            self.ai_brake_factor = const.BASE_AI_BRAKE_FACTOR * 1.15
-            self.ai_steer_sharpness = const.BASE_AI_STEER_SHARPNESS * 0.85
-            self.ai_mud_reaction = const.BASE_AI_MUD_REACTION * 1.1
-            self.ai_lookahead_factor = const.BASE_AI_LOOKAHEAD_FACTOR * 0.90
-            self.ai_turn_threshold = const.BASE_AI_TURN_THRESHOLD + 8
+            self.ai_throttle_control *= 0.85; self.ai_brake_factor *= 1.1 # More cautious braking
+            self.ai_steer_sharpness *= 0.7; self.ai_mud_reaction *= 1.2 # Slower in mud
+            self.ai_lookahead_factor *= 0.8; self.ai_turn_threshold += 15 # Turns earlier, more slowly
+        elif difficulty == "Medium": # Values are already base, maybe slight adjustments
+            self.ai_throttle_control *= 0.95
+            self.ai_brake_factor *= 1.0
+            self.ai_steer_sharpness *= 0.9
         elif difficulty == "Hard":
-            self.ai_throttle_control = 0.98; self.ai_brake_factor = 0.9
-            self.ai_steer_sharpness = 0.9; self.ai_mud_reaction = 0.4
-            self.ai_lookahead_factor = 1.8; self.ai_turn_threshold = 15
+            self.ai_throttle_control *= 1.0; self.ai_brake_factor *= 0.8 # Brakes less/later
+            self.ai_steer_sharpness *= 1.1; self.ai_mud_reaction *= 0.8 # Handles mud better
+            self.ai_lookahead_factor *= 1.2; self.ai_turn_threshold -= 10 # Turns sharper, later
         elif difficulty == "Random":
-            self.ai_throttle_control = clamp(random.gauss(const.BASE_AI_THROTTLE_CONTROL, const.BASE_AI_THROTTLE_CONTROL * const.AI_RANDOM_STD_DEV_FACTOR), 0.65, 1.0)
-            self.ai_brake_factor = clamp(random.gauss(const.BASE_AI_BRAKE_FACTOR, const.BASE_AI_BRAKE_FACTOR * const.AI_RANDOM_STD_DEV_FACTOR), 0.5, 1.2)
-            self.ai_steer_sharpness = clamp(random.gauss(const.BASE_AI_STEER_SHARPNESS, const.BASE_AI_STEER_SHARPNESS * const.AI_RANDOM_STD_DEV_FACTOR), 0.4, 1.0)
-            self.ai_mud_reaction = clamp(random.gauss(const.BASE_AI_MUD_REACTION, const.BASE_AI_MUD_REACTION * const.AI_RANDOM_STD_DEV_FACTOR), 0.3, 0.9)
-            self.ai_lookahead_factor = clamp(random.gauss(const.BASE_AI_LOOKAHEAD_FACTOR, const.BASE_AI_LOOKAHEAD_FACTOR * const.AI_RANDOM_STD_DEV_FACTOR), 0.9, 2.2)
-            self.ai_turn_threshold = clamp(random.gauss(const.BASE_AI_TURN_THRESHOLD, const.BASE_AI_TURN_THRESHOLD * const.AI_RANDOM_STD_DEV_FACTOR), 10, 50)
-        else: # Default Medium
-            self.ai_throttle_control = const.BASE_AI_THROTTLE_CONTROL * 0.90
-            self.ai_brake_factor = const.BASE_AI_BRAKE_FACTOR * 1.15
-            self.ai_steer_sharpness = const.BASE_AI_STEER_SHARPNESS * 0.85
-            self.ai_mud_reaction = const.BASE_AI_MUD_REACTION * 1.1
-            self.ai_lookahead_factor = const.BASE_AI_LOOKAHEAD_FACTOR * 0.90
-            self.ai_turn_threshold = const.BASE_AI_TURN_THRESHOLD + 8
-        param_variation_range = 0.10
-        self.ai_throttle_control = clamp(self.ai_throttle_control * random.uniform(1.0 - param_variation_range, 1.0 + param_variation_range), 0.60, 1.0)
-        self.ai_brake_factor = clamp(self.ai_brake_factor * random.uniform(1.0 - param_variation_range, 1.0 + param_variation_range), 0.4, 1.3)
-        self.ai_steer_sharpness = clamp(self.ai_steer_sharpness * random.uniform(1.0 - param_variation_range, 1.0 + param_variation_range), 0.3, 1.0)
-        self.ai_lookahead_factor = clamp(self.ai_lookahead_factor * random.uniform(1.0 - param_variation_range, 1.0 + param_variation_range), 0.8, 2.5)
-        self.ai_turn_threshold = clamp(self.ai_turn_threshold + random.uniform(-7, 7), 10, 55)
-        self.ai_mud_reaction = clamp(self.ai_mud_reaction * random.uniform(1.0 - param_variation_range, 1.0 + param_variation_range), 0.2, 0.95)
+            self.ai_throttle_control = clamp(random.gauss(const.BASE_AI_THROTTLE_CONTROL, const.AI_RANDOM_STD_DEV_FACTOR), 0.7, 1.0)
+            self.ai_brake_factor = clamp(random.gauss(const.BASE_AI_BRAKE_FACTOR, const.AI_RANDOM_STD_DEV_FACTOR), 0.6, 1.2)
+            self.ai_steer_sharpness = clamp(random.gauss(const.BASE_AI_STEER_SHARPNESS, const.AI_RANDOM_STD_DEV_FACTOR), 0.6, 1.2)
+            self.ai_mud_reaction = clamp(random.gauss(const.BASE_AI_MUD_REACTION, const.AI_RANDOM_STD_DEV_FACTOR), 0.5, 1.1)
+            self.ai_lookahead_factor = clamp(random.gauss(const.BASE_AI_LOOKAHEAD_FACTOR, const.AI_RANDOM_STD_DEV_FACTOR), 0.9, 2.0)
+            self.ai_turn_threshold = clamp(random.gauss(const.BASE_AI_TURN_THRESHOLD, const.AI_RANDOM_STD_DEV_FACTOR*5), 10, 40)
+
+        # Add a small final random variation to each AI car regardless of fixed difficulty
+        param_variation_range = 0.05 # +/- 5%
+        self.ai_throttle_control = clamp(self.ai_throttle_control * random.uniform(1.0 - param_variation_range, 1.0 + param_variation_range), 0.65, 1.0)
+        self.ai_brake_factor = clamp(self.ai_brake_factor * random.uniform(1.0 - param_variation_range, 1.0 + param_variation_range), 0.5, 1.3)
+        self.ai_steer_sharpness = clamp(self.ai_steer_sharpness * random.uniform(1.0 - param_variation_range, 1.0 + param_variation_range), 0.5, 1.2)
+        self.ai_lookahead_factor = clamp(self.ai_lookahead_factor * random.uniform(1.0 - param_variation_range, 1.0 + param_variation_range), 0.8, 2.2)
+        self.ai_turn_threshold = clamp(self.ai_turn_threshold + random.uniform(-5, 5), 5, 45)
+        self.ai_mud_reaction = clamp(self.ai_mud_reaction * random.uniform(1.0 - param_variation_range, 1.0 + param_variation_range), 0.4, 1.2)
+
 
     def reset_position(self, start_world_x=0.0, start_world_y=0.0):
         self.world_x = start_world_x; self.world_y = start_world_y
@@ -164,7 +180,7 @@ class Car:
         self.on_mud = False; self.is_drifting = False; self.is_handbraking = False
         self.is_airborne = False; self.airborne_timer = 0.0
         self.initial_airborne_duration_this_jump = 0.0
-        self.last_collided_hill_crest = None
+        self.last_collided_hill_crest = None # Reset for hill jump logic
         self.ai_target_checkpoint_index = 0
         self.current_lap = 0; self.lap_times = []
         self.lap_start_time = 0.0; self.race_started = False
@@ -174,7 +190,6 @@ class Car:
         self.throttle_input = throttle; self.brake_input = brake; self.steering_input = steer; self.handbrake_input = handbrake
 
     def update_ai(self, dt, checkpoints, num_course_checkpoints, total_laps, current_time_s):
-        # ... (AI logic as before) ...
         if self.race_finished_for_car:
             self.throttle_input = 0; self.brake_input = 0.5; self.steering_input = 0; return
         current_target_world_pos = None
@@ -241,7 +256,6 @@ class Car:
         self.handbrake_input = 0.0
 
     def update(self, dt):
-        # ... (physics update as before) ...
         if dt <= 0: return
         self.prev_world_x = self.world_x; self.prev_world_y = self.world_y
         self.is_handbraking = self.handbrake_input > 0.5
@@ -336,10 +350,9 @@ class Car:
         
         self.update_dust(dt)
         self.update_mud_splash(dt)
-        # Note: leave_tire_tracks is called from main.py after car_obj.update(dt)
+        # leave_tire_tracks is called from main.py
 
     def trigger_jump(self):
-        # ... (trigger_jump method as before) ...
         if not self.is_airborne:
             self.is_airborne = True
             speed_ratio = clamp(self.speed / self.max_car_speed if self.max_car_speed > 0 else 0, 0, 1)
@@ -347,9 +360,9 @@ class Car:
             self.airborne_timer = self.initial_airborne_duration_this_jump
 
     def rotate_and_position_shapes(self):
-        # ... (rotate_and_position_shapes method as before, with parabolic lift) ...
         rad = deg_to_rad(self.heading); cos_a = math.cos(rad); sin_a = math.sin(rad)
         base_screen_y = self.screen_y
+        
         airborne_lift_amount = 0
         if self.is_airborne and self.initial_airborne_duration_this_jump > 0:
             time_elapsed_in_jump = self.initial_airborne_duration_this_jump - self.airborne_timer
@@ -357,7 +370,9 @@ class Car:
             max_visual_lift = 35 
             lift_factor = 4 * normalized_time_in_jump * (1 - normalized_time_in_jump)
             airborne_lift_amount = -max_visual_lift * lift_factor
+        
         current_screen_y_with_lift = base_screen_y + airborne_lift_amount
+
         self.rotated_shape_body = []
         for x, y in self.base_shape_body:
             self.rotated_shape_body.append((x*cos_a - y*sin_a + self.screen_x, x*sin_a + y*cos_a + current_screen_y_with_lift))
@@ -372,7 +387,6 @@ class Car:
             self.rotated_shape_tires[i] = [( (cx+px)*cos_a - (cy+py)*sin_a + self.screen_x, (cx+px)*sin_a + (cy+py)*cos_a + current_screen_y_with_lift) for px,py in corners]
 
     def update_dust(self, dt):
-        # ... (update_dust method as before) ...
         if dt <= 0: return
         self.time_since_last_dust += dt; spawn_intensity = 1.0
         if self.is_handbraking: spawn_intensity = 2.5
@@ -393,7 +407,6 @@ class Car:
         self.dust_particles = deque(p for p in self.dust_particles if p.update(dt))
 
     def update_mud_splash(self, dt):
-        # ... (update_mud_splash method as before) ...
         if dt <= 0 or not self.on_mud or self.is_airborne: return
         self.time_since_last_mud += dt
         if self.speed > const.MUD_SPAWN_SPEED_THRESHOLD and self.time_since_last_mud >= const.MUD_SPAWN_INTERVAL:
@@ -411,7 +424,6 @@ class Car:
         self.mud_particles = deque(p for p in self.mud_particles if p.update(dt))
 
     def draw(self, surface, draw_shadow=True):
-        # ... (draw method with dynamic shadow as before) ...
         if draw_shadow:
             shadow_scale_factor = 1.0; shadow_alpha_factor = 1.0
             shadow_offset_x_mult = 1.0; shadow_offset_y_mult = 1.0
@@ -465,51 +477,31 @@ class Car:
 
     def draw_mud_splash(self, surface, camera_offset_x, camera_offset_y):
         for particle in self.mud_particles: particle.draw(surface, camera_offset_x, camera_offset_y)
-        
-    # --- NEW METHOD for Tire Tracks ---
+
     def leave_tire_tracks(self, tracks_surface, world_bounds_offset):
-        """
-        Draws tire tracks onto the provided tracks_surface if conditions are met.
-        world_bounds_offset is typically const.WORLD_BOUNDS, used to map world coords to surface coords.
-        """
-        # Conditions for leaving tracks:
-        # 1. Not airborne
-        # 2. Not on a mud patch (self.on_mud is set in main.py)
-        # 3. Speed is above a minimum threshold
-        # (Future: Could add check for "on_grass" if you have defined road surfaces)
         if not self.is_airborne and not self.on_mud and self.speed > const.TIRE_TRACK_MIN_SPEED:
             heading_rad = deg_to_rad(self.heading)
             cos_h = math.cos(heading_rad)
             sin_h = math.sin(heading_rad)
 
-            # Calculate positions for two rear tire tracks
-            # Using simplified offsets from constants for now
-            # Track point 1 (e.g., left rear)
             track1_world_x = self.world_x - cos_h * const.TIRE_TRACK_OFFSET_REAR + sin_h * const.TIRE_TRACK_OFFSET_SIDE
             track1_world_y = self.world_y - sin_h * const.TIRE_TRACK_OFFSET_REAR - cos_h * const.TIRE_TRACK_OFFSET_SIDE
-            
-            # Track point 2 (e.g., right rear)
             track2_world_x = self.world_x - cos_h * const.TIRE_TRACK_OFFSET_REAR - sin_h * const.TIRE_TRACK_OFFSET_SIDE
             track2_world_y = self.world_y - sin_h * const.TIRE_TRACK_OFFSET_REAR + cos_h * const.TIRE_TRACK_OFFSET_SIDE
 
-            # Convert world coordinates to coordinates on the tire_tracks_surface
-            # The tire_tracks_surface has its (0,0) at world (-world_bounds_offset, -world_bounds_offset)
             track1_surf_x = int(track1_world_x + world_bounds_offset)
             track1_surf_y = int(track1_world_y + world_bounds_offset)
             track2_surf_x = int(track2_world_x + world_bounds_offset)
             track2_surf_y = int(track2_world_y + world_bounds_offset)
 
-            # Draw the tracks (e.g., small circles)
             pygame.draw.circle(tracks_surface, const.TIRE_TRACK_COLOR, (track1_surf_x, track1_surf_y), const.TIRE_TRACK_RADIUS)
             pygame.draw.circle(tracks_surface, const.TIRE_TRACK_COLOR, (track2_surf_x, track2_surf_y), const.TIRE_TRACK_RADIUS)
 
     def get_world_collision_rect(self):
-        # ... (get_world_collision_rect method as before) ...
         radius = self.collision_radius * 1.2
         return pygame.Rect(self.world_x - radius, self.world_y - radius, radius * 2, radius * 2)
 
     def resolve_collision_with(self, other_car, nx, ny, overlap):
-        # ... (resolve_collision_with method as before) ...
         correction_amount = overlap / 2.0
         self.world_x += nx * correction_amount; self.world_y += ny * correction_amount
         other_car.world_x -= nx * correction_amount; other_car.world_y -= ny * correction_amount
@@ -517,7 +509,7 @@ class Car:
         vel_normal = rvx * nx + rvy * ny
         if vel_normal > 0: return
         elasticity = 0.6; m1 = self.mass; m2 = other_car.mass
-        if m1 <= 0: m1 = 1.0; 
+        if m1 <= 0: m1 = 1.0;
         if m2 <= 0: m2 = 1.0
         inv_mass_sum = (1.0 / m1) + (1.0 / m2)
         if inv_mass_sum == 0: return

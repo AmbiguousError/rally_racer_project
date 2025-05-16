@@ -9,7 +9,7 @@ import pygame # For pygame.Rect if used in VisualHill internal calculations
 # Assuming constants.py and utils.py are in the parent directory or project root is in PYTHONPATH
 # If running main.py from the project root, these imports should work.
 import constants as const
-from utils import distance_sq # For checking distances between objects
+from utils import distance_sq, lerp # For checking distances between objects
 
 # Assuming Checkpoint, MudPatch, and Ramp classes are in classes.track_elements
 # If using classes/__init__.py to expose them:
@@ -108,6 +108,183 @@ def generate_random_checkpoints(count, existing_objects_for_spacing, start_finis
             break 
     return checkpoint_coords
 
+# rally_racer_project/course_generator.py
+# ... (imports and other classes/functions like VisualHill, is_too_close, etc.)
+
+# Helper function for road generation (can be inside generate_road_path or global to module)
+def get_perpendicular_offset_points(center_x, center_y, tangent_dx, tangent_dy, width):
+    """
+    Calculates two points offset perpendicularly from a center point along a tangent.
+    """
+    # Normalize the tangent vector (direction of the road segment)
+    length = math.sqrt(tangent_dx**2 + tangent_dy**2)
+    if length == 0: # Avoid division by zero for coincident points
+        # Default to horizontal perpendicular if tangent is zero length
+        norm_dx, norm_dy = 0, 1
+    else:
+        norm_dx = tangent_dx / length
+        norm_dy = tangent_dy / length
+
+    # Perpendicular vector (rotate tangent by 90 degrees)
+    perp_dx = -norm_dy
+    perp_dy = norm_dx
+
+    half_width = width / 2.0
+
+    p1_x = center_x + perp_dx * half_width
+    p1_y = center_y + perp_dy * half_width
+    p2_x = center_x - perp_dx * half_width
+    p2_y = center_y - perp_dy * half_width
+    return (p1_x, p1_y), (p2_x, p2_y)
+
+
+# rally_racer_project/course_generator.py
+
+# ... (other imports, is_too_close, VisualHill class, get_perpendicular_offset_points,
+#      generate_random_checkpoints, generate_random_mud_patches, generate_random_ramps, generate_random_hills) ...
+
+def generate_road_path(checkpoint_objects_list, start_finish_line_coords, road_width):
+    """
+    Generates a road path based on checkpoints.
+    Returns:
+        centerline_points (list of tuples): Points defining the road's centerline.
+        road_segments_polygons (list of lists of tuples): List of polygons (quads) representing road surface.
+    """
+    centerline_points = []
+    road_segments_polygons = []
+    
+    path_nodes = []
+    sf_mid_x = (start_finish_line_coords[0][0] + start_finish_line_coords[1][0]) / 2
+    sf_mid_y = (start_finish_line_coords[0][1] + start_finish_line_coords[1][1]) / 2
+    
+    course_cps = sorted([cp for cp in checkpoint_objects_list if not cp.is_gate], key=lambda cp: cp.index)
+
+    if not course_cps:
+        p_start = (sf_mid_x, sf_mid_y - 200) 
+        p_end = (sf_mid_x, sf_mid_y + 200)   
+        path_nodes.extend([p_start, (sf_mid_x, sf_mid_y), p_end])
+    else:
+        sf_dx = start_finish_line_coords[1][0] - start_finish_line_coords[0][0]
+        sf_dy = start_finish_line_coords[1][1] - start_finish_line_coords[0][1]
+        sf_len = math.sqrt(sf_dx**2 + sf_dy**2)
+        track_dir_x = -sf_dy / sf_len if sf_len > 0 else 1.0 # Ensure float
+        track_dir_y = sf_dx / sf_len if sf_len > 0 else 0.0  # Ensure float
+
+        # Start a bit before the S/F line, oriented correctly
+        path_nodes.append((sf_mid_x - track_dir_x * road_width, sf_mid_y - track_dir_y * road_width))
+        path_nodes.append((sf_mid_x, sf_mid_y)) 
+
+        for cp in course_cps:
+            path_nodes.append((cp.world_x, cp.world_y))
+        
+        path_nodes.append((sf_mid_x, sf_mid_y)) # Loop back through S/F
+        # End a bit after the S/F line
+        path_nodes.append((sf_mid_x + track_dir_x * road_width, sf_mid_y + track_dir_y * road_width))
+
+
+    if len(path_nodes) < 2:
+        return [], []
+
+    # --- Refined Centerline (Optional: Add more points for smoother curves later if needed) ---
+    # For now, path_nodes will be our centerline_points.
+    # If you want smoother curves, you'd interpolate more points here (e.g., using Catmull-Rom).
+    # Let's add a simple subdivision for slightly smoother tangents:
+    # For a slightly smoother path using subdivision and midpoint displacement (basic):
+    subdivided_centerline = []
+    if len(path_nodes) >=2:
+        subdivided_centerline.append(path_nodes[0])
+        for i in range(len(path_nodes) - 1):
+            p0 = path_nodes[i]
+            p1 = path_nodes[i+1]
+            # Add N subdivisions (e.g., 3 subdivisions = 4 new segments)
+            
+            # --- TRY INCREASING THIS VALUE ---
+            num_intermediate_points = 7 # Was 3. Try 5, 7, or 10.
+            # --- END CHANGE ---
+
+            for j in range(1, num_intermediate_points + 1):
+                t = j / (num_intermediate_points + 1.0) # Ensure float division
+                ix = lerp(p0[0], p1[0], t)
+                iy = lerp(p0[1], p1[1], t)
+                subdivided_centerline.append((ix, iy))
+            subdivided_centerline.append(p1) # Add the actual end node of the segment
+    centerline_points = subdivided_centerline
+    
+    if len(centerline_points) < 2:
+         return [], []
+
+
+    # --- Generate edge points with improved tangent/normal calculation ---
+    left_edge_points = []
+    right_edge_points = []
+
+    for i in range(len(centerline_points)):
+        p_curr = centerline_points[i]
+        
+        tangent_dx, tangent_dy = 0, 0
+
+        if i == 0: # First point
+            p_next = centerline_points[i+1]
+            tangent_dx = p_next[0] - p_curr[0]
+            tangent_dy = p_next[1] - p_curr[1]
+        elif i == len(centerline_points) - 1: # Last point
+            p_prev = centerline_points[i-1]
+            tangent_dx = p_curr[0] - p_prev[0]
+            tangent_dy = p_curr[1] - p_prev[1]
+        else: # Intermediate points - use average of incoming and outgoing segment directions
+            p_prev = centerline_points[i-1]
+            p_next = centerline_points[i+1]
+
+            # Vector from previous to current
+            v_in_dx = p_curr[0] - p_prev[0]
+            v_in_dy = p_curr[1] - p_prev[1]
+            len_in = math.sqrt(v_in_dx**2 + v_in_dy**2)
+            if len_in > 0:
+                v_in_dx /= len_in
+                v_in_dy /= len_in
+
+            # Vector from current to next
+            v_out_dx = p_next[0] - p_curr[0]
+            v_out_dy = p_next[1] - p_curr[1]
+            len_out = math.sqrt(v_out_dx**2 + v_out_dy**2)
+            if len_out > 0:
+                v_out_dx /= len_out
+                v_out_dy /= len_out
+            
+            # Average the normalized direction vectors
+            avg_dx = (v_in_dx + v_out_dx) 
+            avg_dy = (v_in_dy + v_out_dy)
+            len_avg = math.sqrt(avg_dx**2 + avg_dy**2)
+
+            if len_avg > 0: # If vectors aren't opposite
+                tangent_dx = avg_dx / len_avg
+                tangent_dy = avg_dy / len_avg
+            else: # Vectors were opposite (e.g. 180 degree turn point), use outgoing as fallback
+                  # This case might still cause pinching if not handled by spline/smoothing.
+                tangent_dx = v_out_dx 
+                tangent_dy = v_out_dy
+                if not (tangent_dx or tangent_dy) and v_in_dx or v_in_dy: # if v_out was zero length
+                    tangent_dx = v_in_dx
+                    tangent_dy = v_in_dy
+                elif not (tangent_dx or tangent_dy): # if both were zero length (coincident points)
+                    tangent_dx = 1.0; tangent_dy = 0.0 # default
+
+        left_pt, right_pt = get_perpendicular_offset_points(p_curr[0], p_curr[1], tangent_dx, tangent_dy, road_width)
+        left_edge_points.append(left_pt)
+        right_edge_points.append(right_pt)
+
+    # Create quad polygons for each segment
+    for i in range(len(centerline_points) - 1):
+        p1_left = left_edge_points[i]
+        p1_right = right_edge_points[i]
+        p2_left = left_edge_points[i+1]
+        p2_right = right_edge_points[i+1]
+        
+        road_segments_polygons.append([p1_left, p2_left, p2_right, p1_right])
+        
+    return centerline_points, road_segments_polygons
+
+
 def generate_random_mud_patches(count, existing_objects, start_finish_line_coords, course_checkpoint_coords_list):
     mud_patches = []
     attempts = 0
@@ -142,6 +319,7 @@ def generate_random_mud_patches(count, existing_objects, start_finish_line_coord
     if attempts >= max_attempts and len(mud_patches) < count:
         print(f"Warning: CourseGen - Could only generate {len(mud_patches)}/{count} mud patches.")
     return mud_patches
+
 
 # --- UPDATED: generate_random_ramps Function ---
 def generate_random_ramps(count, existing_objects, start_finish_line_coords):
