@@ -49,7 +49,7 @@ def draw_scrolling_track(surface, offset_x, offset_y, visual_hills_list=None, ro
             # Cull if the polygon's bounding box doesn't intersect the screen
             if poly_screen_bbox.colliderect(screen_rect):
                 pygame.draw.polygon(surface, const.ROAD_COLOR, road_poly_screen_coords)
-                if const.ROAD_BORDER_WIDTH > 0:
+                if const.ROAD_BORDER_WIDTH > 0: # This check handles it
                     pygame.draw.polygon(surface, const.ROAD_BORDER_COLOR, road_poly_screen_coords, const.ROAD_BORDER_WIDTH)
 
     # --- Draw Visual Hills ---

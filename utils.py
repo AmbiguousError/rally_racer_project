@@ -1,4 +1,4 @@
-# utils.py
+# rally_racer_project/utils.py
 # This file contains general utility functions for the Rally Racer game.
 
 import math
@@ -24,7 +24,8 @@ def lerp(a, b, t):
     return a + (b - a) * t
 
 def distance_sq(p1, p2):
-    """Calculates the squared Euclidean distance between two points (p1 and p2).
+    """
+    Calculates the squared Euclidean distance between two points (p1 and p2).
     Each point is a tuple (x, y).
     This is faster than distance() if you only need to compare distances.
     """
@@ -45,45 +46,34 @@ def check_line_crossing(p1_segment1, p2_segment1, p1_segment2, p2_segment2):
     p1_segment2, p2_segment2: Define the second line segment.
     Each point is a tuple (x, y).
     """
-    # Check bounding boxes first for a quick exit if no overlap
+    # Bounding box check
     if (max(p1_segment1[0], p2_segment1[0]) < min(p1_segment2[0], p2_segment2[0]) or
         min(p1_segment1[0], p2_segment1[0]) > max(p1_segment2[0], p2_segment2[0]) or
         max(p1_segment1[1], p2_segment1[1]) < min(p1_segment2[1], p2_segment2[1]) or
         min(p1_segment1[1], p2_segment1[1]) > max(p1_segment2[1], p2_segment2[1])):
         return False
 
-    # Helper function to find orientation of ordered triplet (p, q, r).
-    # 0 -> p, q and r are collinear
-    # 1 -> Clockwise
-    # 2 -> Counterclockwise
     def orientation(p, q, r):
         val = (q[1] - p[1]) * (r[0] - q[0]) - \
               (q[0] - p[0]) * (r[1] - q[1])
-        if abs(val) < 1e-9:  # Using a small epsilon for float comparison
-            return 0  # Collinear
+        if abs(val) < 1e-9: return 0  # Collinear (using epsilon for float comparison)
         return 1 if val > 0 else 2  # Clockwise or Counterclockwise
 
-    # Find the four orientations needed for general and special cases
     o1 = orientation(p1_segment1, p2_segment1, p1_segment2)
     o2 = orientation(p1_segment1, p2_segment1, p2_segment2)
     o3 = orientation(p1_segment2, p2_segment2, p1_segment1)
     o4 = orientation(p1_segment2, p2_segment2, p2_segment1)
 
-    # General case: segments intersect if orientations are different
     if o1 != o2 and o3 != o4:
-        return True
+        return True # General case: segments intersect
 
     # Special Cases for collinear points:
-    # Check if p1_segment2 lies on segment p1_segment1-p2_segment1
     if o1 == 0 and on_segment(p1_segment1, p1_segment2, p2_segment1): return True
-    # Check if p2_segment2 lies on segment p1_segment1-p2_segment1
     if o2 == 0 and on_segment(p1_segment1, p2_segment2, p2_segment1): return True
-    # Check if p1_segment1 lies on segment p1_segment2-p2_segment2
     if o3 == 0 and on_segment(p1_segment2, p1_segment1, p2_segment2): return True
-    # Check if p2_segment1 lies on segment p1_segment2-p2_segment2
     if o4 == 0 and on_segment(p1_segment2, p2_segment1, p2_segment2): return True
 
-    return False  # Doesn't fall in any of the above cases
+    return False
 
 def on_segment(p, q, r):
     """
@@ -95,8 +85,101 @@ def on_segment(p, q, r):
         return True
     return False
 
-# You can add other general utility functions here as your project grows.
-# For example, functions for:
-# - Vector math (normalize vector, dot product, cross product if needed for 3D later)
-# - Random number generation with specific distributions if `random` module isn't enough
-# - Text rendering helpers (e.g., drawing multi-line text, text with background)
+# --- NEW FUNCTION (added for road collision avoidance logic) ---
+def point_segment_distance_sq(p, a, b):
+    """
+    Calculates the squared perpendicular distance from a point p to a line segment ab.
+    Also handles cases where the closest point on the line ab is one of the endpoints a or b.
+    p, a, b are tuples (x, y).
+    Returns the squared distance.
+    """
+    px, py = p
+    ax, ay = a
+    bx, by = b
+
+    ab_x = bx - ax
+    ab_y = by - ay
+    ap_x = px - ax
+    ap_y = py - ay
+
+    len_sq_ab = ab_x * ab_x + ab_y * ab_y
+
+    if len_sq_ab == 0:
+        return ap_x * ap_x + ap_y * ap_y
+
+    t = (ap_x * ab_x + ap_y * ab_y) / len_sq_ab
+    closest_x, closest_y = 0, 0
+
+    if t < 0:
+        closest_x, closest_y = ax, ay
+    elif t > 1:
+        closest_x, closest_y = bx, by
+    else:
+        closest_x = ax + t * ab_x
+        closest_y = ay + t * ab_y
+    
+    dist_sq = (px - closest_x)**2 + (py - closest_y)**2
+    return dist_sq
+
+# --- NEW FUNCTION (added for car on_road detection logic) ---
+def is_point_in_polygon(point, polygon_vertices):
+    """
+    Checks if a point is inside a polygon using the ray casting algorithm.
+    point: tuple (x, y)
+    polygon_vertices: list of tuples [(x1, y1), (x2, y2), ...]
+    Returns: True if the point is in the polygon, False otherwise.
+    """
+    x, y = point
+    n = len(polygon_vertices)
+    inside = False
+
+    if n < 3: # A polygon must have at least 3 vertices
+        return False
+
+    p1x, p1y = polygon_vertices[0]
+    for i in range(n + 1):
+        p2x, p2y = polygon_vertices[i % n]
+        if y > min(p1y, p2y):
+            if y <= max(p1y, p2y):
+                if x <= max(p1x, p2x):
+                    if p1y != p2y: # Check if the edge is not horizontal
+                        xinters = (y - p1y) * (p2x - p1x) / (p2y - p1y) + p1x
+                    # For horizontal lines, this xinters calculation might be problematic if y == p1y == p2y.
+                    # However, the outer conditions y > min and y <= max should handle horizontal lines correctly
+                    # by only proceeding if y is between the line's y-range (which is a single value for horizontal).
+                    # If p1y == p2y (horizontal segment), the xinters calculation divides by zero.
+                    # The point-in-polygon test handles horizontal segments implicitly.
+                    # If p1y == p2y, this branch is only entered if y is exactly on that horizontal line.
+                    # Then it checks if x <= max(p1x,p2x). If also x >= min(p1x,p2x), then the point (x,y) is on the horizontal segment.
+                    # A ray from point (x,y) to the right would then either cross it (if x is to the left of segment) or not.
+                    # The standard ray casting algorithm handles horizontal edges correctly by either counting them
+                    # specially or by ensuring rays don't pass exactly through vertices.
+                    # This implementation relies on the crossing count.
+
+                    # A more robust way for xinters if p1y == p2y (horizontal segment):
+                    # if p1y == p2y: # Horizontal segment
+                    #    if y == p1y: # Point y is on the segment's y-level
+                    #        # No crossing for horizontal segment unless endpoint, handled by vertex checks usually
+                    #        # This simple version might miscount if ray aligns with edge
+                    #        pass # Effectively no crossing for horizontal segments in this simple test
+                    # else: # Non-horizontal
+                    #    xinters = (y - p1y) * (p2x - p1x) / (p2y - p1y) + p1x
+
+                    # Simplified: if the edge is horizontal (p1y == p2y), this specific crossing test part
+                    # doesn't robustly handle it for ray casting unless y is *not* equal to p1y.
+                    # The original logic is mostly standard.
+                    if p1y != p2y:
+                         xinters = (y - p1y) * (p2x - p1x) / (p2y - p1y) + p1x
+                    elif y == p1y and x <= max(p1x, p2x) and min(p1x,p2x) <= x : # Point on horizontal segment, no "crossing" in standard sense
+                        # This case might require specific handling if ray passes *along* horizontal segment
+                        # For simplicity in this version, we assume general position.
+                        # Most standard libraries might perturb y slightly or handle vertices explicitly.
+                        # Let's stick to the common algorithm:
+                        p1x,p1y=p2x,p2y # move to next segment if it's perfectly horizontal and point is on its y
+                        continue
+
+
+                    if p1x == p2x or x <= xinters: # If edge is vertical OR point is to the left of intersection
+                        inside = not inside
+        p1x, p1y = p2x, p2y
+    return inside
