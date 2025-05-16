@@ -70,9 +70,14 @@ def draw_map(surface, player_car, ai_cars, mud_patches, checkpoints, next_checkp
     if ramps_list:
         for ramp in ramps_list:
             map_x, map_y = world_to_map(ramp.world_x, ramp.world_y)
-            map_ramp_size = max(1, int((ramp.width / 2.0) * map_world_scale_x))
+            # --- MODIFIED LINE BELOW ---
+            # Use ramp.diameter for the size calculation on the map
+            map_ramp_size = max(1, int((ramp.diameter / 2.0) * map_world_scale_x)) # Or simply ramp.radius * map_world_scale_x
+            # --- END MODIFIED LINE ---
             if 0 <= map_x <= map_display_rect.width and 0 <= map_y <= map_display_rect.height:
+                # Draw as a small square or circle. Let's keep it a square for now on the map.
                 pygame.draw.rect(map_surface, const.RAMP_COLOR, (map_x - map_ramp_size//2, map_y - map_ramp_size//2, map_ramp_size, map_ramp_size))
+
 
     if visual_hills_list:
         for hill in visual_hills_list:
@@ -116,6 +121,7 @@ def draw_map(surface, player_car, ai_cars, mud_patches, checkpoints, next_checkp
                 pygame.draw.circle(map_surface, map_marker_color, (ai_car_map_x, ai_car_map_y), 2)
 
     surface.blit(map_surface, map_display_rect.topleft)
+    
 
 def draw_button(surface, rect, text, font, button_base_color, text_color, button_hover_color):
     mouse_pos = pygame.mouse.get_pos()

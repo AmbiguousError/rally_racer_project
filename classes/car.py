@@ -14,98 +14,75 @@ from utils import (
 
 from .particle import DustParticle, MudParticle
 
-# rally_racer_project/classes/car.py
-# ... (imports)
-
-# rally_racer_project/classes/car.py
-
-import pygame
-import random
-import math
-from collections import deque
-
-import constants as const
-from utils import (
-    deg_to_rad, rad_to_deg, angle_difference, normalize_angle,
-    lerp, distance_sq, clamp, check_line_crossing
-)
-
-from .particle import DustParticle, MudParticle
-
 class Car:
-    def __init__(self, x, y, is_ai=False, unique_body_color=None): # is_ai is a parameter
-        self.screen_x = x 
+    def __init__(self, x, y, is_ai=False, unique_body_color=None):
+        # ... (all existing __init__ attributes should be here)
+        self.screen_x = x
         self.screen_y = y
-        self.world_x = 0.0 
+        self.world_x = 0.0
         self.world_y = 0.0
-        self.prev_world_x = 0.0 
+        self.prev_world_x = 0.0
         self.prev_world_y = 0.0
-        
-        self.heading = 180.0  
+
+        self.heading = 180.0
         self.velocity_x = 0.0
         self.velocity_y = 0.0
         self.speed = 0.0
         self.rpm = const.IDLE_RPM
-        
+
         self.steering_input = 0.0
         self.throttle_input = 0.0
         self.brake_input = 0.0
         self.handbrake_input = 0.0
-        
+
         self.is_drifting = False
         self.is_handbraking = False
-        self.on_mud = False
-        self.is_ai = is_ai # Ensure this line is present and correctly assigns the parameter
+        self.on_mud = False # This flag is set in main.py
+        self.is_ai = is_ai
         self.is_airborne = False
-        self.airborne_timer = 0.0  
-        self.initial_airborne_duration_this_jump = 0.0 # For parabolic jump visuals
-        self.last_collided_hill_crest = None # For "over the top" hill jump logic
-        
-        self.mass = 1.0 
+        self.airborne_timer = 0.0
+        self.initial_airborne_duration_this_jump = 0.0
+        self.last_collided_hill_crest = None
 
-        if self.is_ai: # Now self.is_ai can be safely accessed here
+        self.mass = 1.0
+
+        if self.is_ai:
             self.color = unique_body_color if unique_body_color else const.AI_CAR_BODY_COLOR
         else:
             self.color = const.CAR_BODY_COLOR
 
-        # Base shapes (defined once)
         self.base_shape_body = [(22, 0), (20, -6), (10, -9), (-12, -9), (-20, -6), (-22, 0), (-20, 6), (-12, 9), (10, 9), (20, 6)]
         self.base_shape_window = [(12, -6), (8, -6), (-8, -6), (-10, -4), (-10, 4), (-8, 6), (8, 6), (12, 4)]
-        self.base_shape_tires = [(12, -10, 6, 4), (12, 10, 6, 4), (-12, -10, 6, 4), (-12, 10, 6, 4)] 
+        self.base_shape_tires = [(12, -10, 6, 4), (12, 10, 6, 4), (-12, -10, 6, 4), (-12, 10, 6, 4)]
         self.base_shape_spoiler = [(-18, -12), (-15, -12), (-15, 12), (-18, 12)]
-        
-        # Rotated shapes (initialized, updated by rotate_and_position_shapes)
+
         self.rotated_shape_body = self.base_shape_body[:]
         self.rotated_shape_window = self.base_shape_window[:]
-        self.rotated_shape_tires = [[(0,0)]*4 for _ in self.base_shape_tires] 
+        self.rotated_shape_tires = [[(0,0)]*4 for _ in self.base_shape_tires]
         self.rotated_shape_spoiler = self.base_shape_spoiler[:]
-        
-        self.collision_radius = 18 
 
-        # Particle effect related attributes
+        self.collision_radius = 18
+
         self.dust_particles = deque()
         self.time_since_last_dust = 0.0
         self.mud_particles = deque()
         self.time_since_last_mud = 0.0
 
-        # Race progress attributes
-        self.ai_target_checkpoint_index = 0 
+        self.ai_target_checkpoint_index = 0
         self.current_lap = 0
         self.lap_times = []
         self.lap_start_time = 0.0
-        self.race_started = False 
-        self.race_finished_for_car = False 
-        self.last_line_crossing_time = -const.LINE_CROSSING_DEBOUNCE 
+        self.race_started = False
+        self.race_finished_for_car = False
+        self.last_line_crossing_time = -const.LINE_CROSSING_DEBOUNCE
 
-        # AI behavior parameters (can be tuned by difficulty settings)
         self.ai_lookahead_factor = const.BASE_AI_LOOKAHEAD_FACTOR
         self.ai_turn_threshold = const.BASE_AI_TURN_THRESHOLD
         self.ai_brake_factor = const.BASE_AI_BRAKE_FACTOR
         self.ai_steer_sharpness = const.BASE_AI_STEER_SHARPNESS
         self.ai_throttle_control = const.BASE_AI_THROTTLE_CONTROL
         self.ai_mud_reaction = const.BASE_AI_MUD_REACTION
-        
-        # Car performance parameters (initialized with base values, modified by apply_setup)
+
         self.max_car_speed = const.BASE_MAX_CAR_SPEED
         self.engine_power = const.BASE_ENGINE_POWER
         self.brake_power = const.BASE_BRAKE_POWER
@@ -113,11 +90,10 @@ class Car:
         self.drift_friction_multiplier = const.BASE_DRIFT_FRICTION_MULTIPLIER
         self.handbrake_friction_multiplier = const.BASE_HANDBRAKE_FRICTION_MULTIPLIER
         self.handbrake_side_grip_loss = const.BASE_HANDBRAKE_SIDE_GRIP_LOSS
-        
-        # These depend on max_car_speed, so they are fine here after max_car_speed is set
         self.drift_threshold_speed = self.max_car_speed * 0.25
         self.dust_spawn_speed_threshold = self.max_car_speed * 0.05
     
+    # ... (apply_setup, apply_ai_difficulty, reset_position, set_controls, update_ai methods as before) ...
     def apply_setup(self, top_speed_percent, grip_percent):
         speed_scale = top_speed_percent / 100.0
         self.max_car_speed = const.BASE_MAX_CAR_SPEED * speed_scale
@@ -188,6 +164,7 @@ class Car:
         self.on_mud = False; self.is_drifting = False; self.is_handbraking = False
         self.is_airborne = False; self.airborne_timer = 0.0
         self.initial_airborne_duration_this_jump = 0.0
+        self.last_collided_hill_crest = None
         self.ai_target_checkpoint_index = 0
         self.current_lap = 0; self.lap_times = []
         self.lap_start_time = 0.0; self.race_started = False
@@ -197,6 +174,7 @@ class Car:
         self.throttle_input = throttle; self.brake_input = brake; self.steering_input = steer; self.handbrake_input = handbrake
 
     def update_ai(self, dt, checkpoints, num_course_checkpoints, total_laps, current_time_s):
+        # ... (AI logic as before) ...
         if self.race_finished_for_car:
             self.throttle_input = 0; self.brake_input = 0.5; self.steering_input = 0; return
         current_target_world_pos = None
@@ -263,6 +241,7 @@ class Car:
         self.handbrake_input = 0.0
 
     def update(self, dt):
+        # ... (physics update as before) ...
         if dt <= 0: return
         self.prev_world_x = self.world_x; self.prev_world_y = self.world_y
         self.is_handbraking = self.handbrake_input > 0.5
@@ -271,7 +250,6 @@ class Car:
             self.airborne_timer -= dt
             if self.airborne_timer <= 0:
                 self.is_airborne = False
-                # print(f"DEBUG: Car {'AI' if self.is_ai else 'Player'} LANDED.") # DEBUG
         
         current_turn_effectiveness = const.AIRBORNE_TURN_EFFECTIVENESS if self.is_airborne else const.MIN_TURN_EFFECTIVENESS
         speed_factor_denom = self.max_car_speed if self.max_car_speed > 0 else 1.0
@@ -288,11 +266,11 @@ class Car:
         accel_magnitude = self.engine_power * effective_throttle
         accel_x = math.cos(heading_rad) * accel_magnitude
         accel_y = math.sin(heading_rad) * accel_magnitude
-        if not self.is_airborne: # No engine acceleration if airborne
+        if not self.is_airborne:
             self.velocity_x += accel_x * dt
             self.velocity_y += accel_y * dt
 
-        if self.brake_input > 0 and self.speed > 0.01 and not self.is_airborne: # No ground braking in air
+        if self.brake_input > 0 and self.speed > 0.01 and not self.is_airborne:
             brake_force_magnitude = self.brake_power * self.brake_input
             brake_dx = -self.velocity_x / self.speed if self.speed > 0 else 0
             brake_dy = -self.velocity_y / self.speed if self.speed > 0 else 0
@@ -358,35 +336,28 @@ class Car:
         
         self.update_dust(dt)
         self.update_mud_splash(dt)
+        # Note: leave_tire_tracks is called from main.py after car_obj.update(dt)
 
     def trigger_jump(self):
+        # ... (trigger_jump method as before) ...
         if not self.is_airborne:
             self.is_airborne = True
             speed_ratio = clamp(self.speed / self.max_car_speed if self.max_car_speed > 0 else 0, 0, 1)
-            # Store the calculated total duration for this specific jump
             self.initial_airborne_duration_this_jump = lerp(const.BASE_AIRBORNE_DURATION, const.MAX_AIRBORNE_DURATION, speed_ratio)
             self.airborne_timer = self.initial_airborne_duration_this_jump
-            # print(f"DEBUG: Car {'AI' if self.is_ai else 'Player'} JUMP! Total Air Time: {self.initial_airborne_duration_this_jump:.2f}s, Timer: {self.airborne_timer:.2f}")
 
     def rotate_and_position_shapes(self):
+        # ... (rotate_and_position_shapes method as before, with parabolic lift) ...
         rad = deg_to_rad(self.heading); cos_a = math.cos(rad); sin_a = math.sin(rad)
-        base_screen_y = self.screen_y # This is the car's y-position on screen before visual lift
-        
+        base_screen_y = self.screen_y
         airborne_lift_amount = 0
         if self.is_airborne and self.initial_airborne_duration_this_jump > 0:
             time_elapsed_in_jump = self.initial_airborne_duration_this_jump - self.airborne_timer
             normalized_time_in_jump = time_elapsed_in_jump / self.initial_airborne_duration_this_jump
-            
-            # Max lift amount (pixels) - Check this value in constants.py if you add it there
-            max_visual_lift = 35 # Example value, could be const.MAX_VISUAL_JUMP_LIFT
-
-            # Parabolic lift: y = 4 * h * x * (1-x), where h is max height, x is normalized time (0 to 1)
+            max_visual_lift = 35 
             lift_factor = 4 * normalized_time_in_jump * (1 - normalized_time_in_jump)
-            airborne_lift_amount = -max_visual_lift * lift_factor # Negative for upward screen movement
-        
+            airborne_lift_amount = -max_visual_lift * lift_factor
         current_screen_y_with_lift = base_screen_y + airborne_lift_amount
-
-        # Rotate and position body parts using current_screen_y_with_lift
         self.rotated_shape_body = []
         for x, y in self.base_shape_body:
             self.rotated_shape_body.append((x*cos_a - y*sin_a + self.screen_x, x*sin_a + y*cos_a + current_screen_y_with_lift))
@@ -401,6 +372,7 @@ class Car:
             self.rotated_shape_tires[i] = [( (cx+px)*cos_a - (cy+py)*sin_a + self.screen_x, (cx+px)*sin_a + (cy+py)*cos_a + current_screen_y_with_lift) for px,py in corners]
 
     def update_dust(self, dt):
+        # ... (update_dust method as before) ...
         if dt <= 0: return
         self.time_since_last_dust += dt; spawn_intensity = 1.0
         if self.is_handbraking: spawn_intensity = 2.5
@@ -421,6 +393,7 @@ class Car:
         self.dust_particles = deque(p for p in self.dust_particles if p.update(dt))
 
     def update_mud_splash(self, dt):
+        # ... (update_mud_splash method as before) ...
         if dt <= 0 or not self.on_mud or self.is_airborne: return
         self.time_since_last_mud += dt
         if self.speed > const.MUD_SPAWN_SPEED_THRESHOLD and self.time_since_last_mud >= const.MUD_SPAWN_INTERVAL:
@@ -438,98 +411,54 @@ class Car:
         self.mud_particles = deque(p for p in self.mud_particles if p.update(dt))
 
     def draw(self, surface, draw_shadow=True):
-        # self.rotate_and_position_shapes() is called in main.py before this
-
+        # ... (draw method with dynamic shadow as before) ...
         if draw_shadow:
-            shadow_scale_factor = 1.0
-            shadow_alpha_factor = 1.0
-            shadow_offset_x_mult = 1.0
-            shadow_offset_y_mult = 1.0
-
+            shadow_scale_factor = 1.0; shadow_alpha_factor = 1.0
+            shadow_offset_x_mult = 1.0; shadow_offset_y_mult = 1.0
             if self.is_airborne and self.initial_airborne_duration_this_jump > 0:
                 time_elapsed_in_jump = self.initial_airborne_duration_this_jump - self.airborne_timer
                 normalized_time_in_jump = time_elapsed_in_jump / self.initial_airborne_duration_this_jump
-                
-                # Parabolic curve for shadow effects (peaks at mid-jump)
                 parabolic_factor = 4 * normalized_time_in_jump * (1 - normalized_time_in_jump)
-
-                # Shadow shrinks, fades, and offsets more at the peak of the jump
-                shadow_scale_factor = lerp(1.0, const.AIRBORNE_SHADOW_SCALE, parabolic_factor) # const.AIRBORNE_SHADOW_SCALE is like 0.5
-                shadow_alpha_factor = lerp(1.0, 0.3, parabolic_factor) # Shadow becomes more transparent
-                shadow_offset_x_mult = lerp(1.0, 3.5, parabolic_factor) # Shadow offsets more
+                shadow_scale_factor = lerp(1.0, const.AIRBORNE_SHADOW_SCALE, parabolic_factor)
+                shadow_alpha_factor = lerp(1.0, 0.3, parabolic_factor)
+                shadow_offset_x_mult = lerp(1.0, 3.5, parabolic_factor)
                 shadow_offset_y_mult = lerp(1.0, 3.5, parabolic_factor)
-
             current_shadow_offset_x = const.SHADOW_OFFSET_X * shadow_offset_x_mult
             current_shadow_offset_y = const.SHADOW_OFFSET_Y * shadow_offset_y_mult
             final_shadow_alpha = int(const.SHADOW_COLOR[3] * shadow_alpha_factor)
-            
-            shadow_surf = pygame.Surface((const.SCREEN_WIDTH, const.SCREEN_HEIGHT), pygame.SRCALPHA)
-            shadow_surf.fill((0,0,0,0))
+            shadow_surf = pygame.Surface((const.SCREEN_WIDTH, const.SCREEN_HEIGHT), pygame.SRCALPHA); shadow_surf.fill((0,0,0,0))
             shadow_color_with_alpha = (*const.BLACK[:3], final_shadow_alpha)
-
-            # Calculate the car's current visual center from its rotated (and lifted) body points
-            # This uses the already transformed points which include the lift.
-            if not self.rotated_shape_body: # Should not happen if rotate_and_position_shapes was called
-                return
-
+            if not self.rotated_shape_body: return
             avg_lifted_x = sum(p[0] for p in self.rotated_shape_body) / len(self.rotated_shape_body)
             avg_lifted_y = sum(p[1] for p in self.rotated_shape_body) / len(self.rotated_shape_body)
-
-            # Draw body shadow
             body_shadow_ps = []
             for p_x, p_y in self.rotated_shape_body:
-                dx, dy = p_x - avg_lifted_x, p_y - avg_lifted_y # Relative to lifted center
+                dx, dy = p_x - avg_lifted_x, p_y - avg_lifted_y
                 scaled_dx, scaled_dy = dx * shadow_scale_factor, dy * shadow_scale_factor
-                shadow_pt_x = avg_lifted_x + scaled_dx + current_shadow_offset_x
-                shadow_pt_y = avg_lifted_y + scaled_dy + current_shadow_offset_y
-                body_shadow_ps.append((shadow_pt_x, shadow_pt_y))
-            if body_shadow_ps:
-                pygame.draw.polygon(shadow_surf, shadow_color_with_alpha, body_shadow_ps)
-
-            # Draw tire shadows
+                body_shadow_ps.append((avg_lifted_x + scaled_dx + current_shadow_offset_x, avg_lifted_y + scaled_dy + current_shadow_offset_y))
+            if body_shadow_ps: pygame.draw.polygon(shadow_surf, shadow_color_with_alpha, body_shadow_ps)
             for tire_corners in self.rotated_shape_tires:
                 if not tire_corners: continue
-                avg_lifted_tx = sum(p[0] for p in tire_corners) / len(tire_corners)
-                avg_lifted_ty = sum(p[1] for p in tire_corners) / len(tire_corners)
+                avg_lifted_tx = sum(p[0] for p in tire_corners) / len(tire_corners); avg_lifted_ty = sum(p[1] for p in tire_corners) / len(tire_corners)
                 shadow_tire_ps = []
                 for p_x, p_y in tire_corners:
-                    dx, dy = p_x - avg_lifted_tx, p_y - avg_lifted_ty
-                    scaled_dx, scaled_dy = dx * shadow_scale_factor, dy * shadow_scale_factor
-                    shadow_tire_ps.append((avg_lifted_tx + scaled_dx + current_shadow_offset_x,
-                                           avg_lifted_ty + scaled_dy + current_shadow_offset_y))
-                if len(shadow_tire_ps) == 4:
-                    pygame.draw.polygon(shadow_surf, shadow_color_with_alpha, shadow_tire_ps)
-            
-            # Draw spoiler shadow
+                    dx, dy = p_x - avg_lifted_tx, p_y - avg_lifted_ty; scaled_dx, scaled_dy = dx * shadow_scale_factor, dy * shadow_scale_factor
+                    shadow_tire_ps.append((avg_lifted_tx + scaled_dx + current_shadow_offset_x, avg_lifted_ty + scaled_dy + current_shadow_offset_y))
+                if len(shadow_tire_ps) == 4: pygame.draw.polygon(shadow_surf, shadow_color_with_alpha, shadow_tire_ps)
             if self.rotated_shape_spoiler:
-                avg_lifted_sx = sum(p[0] for p in self.rotated_shape_spoiler) / len(self.rotated_shape_spoiler)
-                avg_lifted_sy = sum(p[1] for p in self.rotated_shape_spoiler) / len(self.rotated_shape_spoiler)
+                avg_lifted_sx = sum(p[0] for p in self.rotated_shape_spoiler) / len(self.rotated_shape_spoiler); avg_lifted_sy = sum(p[1] for p in self.rotated_shape_spoiler) / len(self.rotated_shape_spoiler)
                 spoiler_shadow_ps = []
                 for p_x, p_y in self.rotated_shape_spoiler:
-                    dx, dy = p_x - avg_lifted_sx, p_y - avg_lifted_sy
-                    scaled_dx, scaled_dy = dx * shadow_scale_factor, dy * shadow_scale_factor
-                    spoiler_shadow_ps.append((avg_lifted_sx + scaled_dx + current_shadow_offset_x,
-                                              avg_lifted_sy + scaled_dy + current_shadow_offset_y))
+                    dx, dy = p_x - avg_lifted_sx, p_y - avg_lifted_sy; scaled_dx, scaled_dy = dx * shadow_scale_factor, dy * shadow_scale_factor
+                    spoiler_shadow_ps.append((avg_lifted_sx + scaled_dx + current_shadow_offset_x, avg_lifted_sy + scaled_dy + current_shadow_offset_y))
                 pygame.draw.polygon(shadow_surf, shadow_color_with_alpha, spoiler_shadow_ps)
-
             surface.blit(shadow_surf, (0,0))
-
-        # Draw car parts (these use self.rotated_shape... which already include the visual lift)
         for tire_corners in self.rotated_shape_tires:
             int_tire_corners = [(int(p[0]), int(p[1])) for p in tire_corners]
             if len(int_tire_corners) == 4: pygame.draw.polygon(surface, const.TIRE_COLOR, int_tire_corners)
-        
-        if self.rotated_shape_spoiler:
-            pygame.draw.polygon(surface, const.SPOILER_COLOR, self.rotated_shape_spoiler)
-            pygame.draw.lines(surface, const.BLACK, True, self.rotated_shape_spoiler, 1)
-        
-        if self.rotated_shape_body:
-            pygame.draw.polygon(surface, self.color, self.rotated_shape_body)
-            pygame.draw.lines(surface, const.BLACK, True, self.rotated_shape_body, 1)
-        
-        if self.rotated_shape_window:
-            pygame.draw.polygon(surface, const.CAR_WINDOW_COLOR, self.rotated_shape_window)
-            pygame.draw.lines(surface, const.BLACK, True, self.rotated_shape_window, 1)
+        if self.rotated_shape_spoiler: pygame.draw.polygon(surface, const.SPOILER_COLOR, self.rotated_shape_spoiler); pygame.draw.lines(surface, const.BLACK, True, self.rotated_shape_spoiler, 1)
+        if self.rotated_shape_body: pygame.draw.polygon(surface, self.color, self.rotated_shape_body); pygame.draw.lines(surface, const.BLACK, True, self.rotated_shape_body, 1)
+        if self.rotated_shape_window: pygame.draw.polygon(surface, const.CAR_WINDOW_COLOR, self.rotated_shape_window); pygame.draw.lines(surface, const.BLACK, True, self.rotated_shape_window, 1)
 
     def draw_dust(self, surface, camera_offset_x, camera_offset_y):
         for particle in self.dust_particles: particle.draw(surface, camera_offset_x, camera_offset_y)
@@ -537,11 +466,50 @@ class Car:
     def draw_mud_splash(self, surface, camera_offset_x, camera_offset_y):
         for particle in self.mud_particles: particle.draw(surface, camera_offset_x, camera_offset_y)
         
+    # --- NEW METHOD for Tire Tracks ---
+    def leave_tire_tracks(self, tracks_surface, world_bounds_offset):
+        """
+        Draws tire tracks onto the provided tracks_surface if conditions are met.
+        world_bounds_offset is typically const.WORLD_BOUNDS, used to map world coords to surface coords.
+        """
+        # Conditions for leaving tracks:
+        # 1. Not airborne
+        # 2. Not on a mud patch (self.on_mud is set in main.py)
+        # 3. Speed is above a minimum threshold
+        # (Future: Could add check for "on_grass" if you have defined road surfaces)
+        if not self.is_airborne and not self.on_mud and self.speed > const.TIRE_TRACK_MIN_SPEED:
+            heading_rad = deg_to_rad(self.heading)
+            cos_h = math.cos(heading_rad)
+            sin_h = math.sin(heading_rad)
+
+            # Calculate positions for two rear tire tracks
+            # Using simplified offsets from constants for now
+            # Track point 1 (e.g., left rear)
+            track1_world_x = self.world_x - cos_h * const.TIRE_TRACK_OFFSET_REAR + sin_h * const.TIRE_TRACK_OFFSET_SIDE
+            track1_world_y = self.world_y - sin_h * const.TIRE_TRACK_OFFSET_REAR - cos_h * const.TIRE_TRACK_OFFSET_SIDE
+            
+            # Track point 2 (e.g., right rear)
+            track2_world_x = self.world_x - cos_h * const.TIRE_TRACK_OFFSET_REAR - sin_h * const.TIRE_TRACK_OFFSET_SIDE
+            track2_world_y = self.world_y - sin_h * const.TIRE_TRACK_OFFSET_REAR + cos_h * const.TIRE_TRACK_OFFSET_SIDE
+
+            # Convert world coordinates to coordinates on the tire_tracks_surface
+            # The tire_tracks_surface has its (0,0) at world (-world_bounds_offset, -world_bounds_offset)
+            track1_surf_x = int(track1_world_x + world_bounds_offset)
+            track1_surf_y = int(track1_world_y + world_bounds_offset)
+            track2_surf_x = int(track2_world_x + world_bounds_offset)
+            track2_surf_y = int(track2_world_y + world_bounds_offset)
+
+            # Draw the tracks (e.g., small circles)
+            pygame.draw.circle(tracks_surface, const.TIRE_TRACK_COLOR, (track1_surf_x, track1_surf_y), const.TIRE_TRACK_RADIUS)
+            pygame.draw.circle(tracks_surface, const.TIRE_TRACK_COLOR, (track2_surf_x, track2_surf_y), const.TIRE_TRACK_RADIUS)
+
     def get_world_collision_rect(self):
+        # ... (get_world_collision_rect method as before) ...
         radius = self.collision_radius * 1.2
         return pygame.Rect(self.world_x - radius, self.world_y - radius, radius * 2, radius * 2)
 
     def resolve_collision_with(self, other_car, nx, ny, overlap):
+        # ... (resolve_collision_with method as before) ...
         correction_amount = overlap / 2.0
         self.world_x += nx * correction_amount; self.world_y += ny * correction_amount
         other_car.world_x -= nx * correction_amount; other_car.world_y -= ny * correction_amount
@@ -549,7 +517,7 @@ class Car:
         vel_normal = rvx * nx + rvy * ny
         if vel_normal > 0: return
         elasticity = 0.6; m1 = self.mass; m2 = other_car.mass
-        if m1 <= 0: m1 = 1.0
+        if m1 <= 0: m1 = 1.0; 
         if m2 <= 0: m2 = 1.0
         inv_mass_sum = (1.0 / m1) + (1.0 / m2)
         if inv_mass_sum == 0: return

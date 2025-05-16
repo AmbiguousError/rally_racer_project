@@ -77,6 +77,17 @@ AI_AVAILABLE_COLORS = [
     (100, 100, 150)  # Dark Slate Blue
 ]
 
+DARK_DIRT_COLOR = (101, 67, 33) # For track details or worn grass
+
+
+# --- NEW: Tire Track Constants ---
+TIRE_TRACK_COLOR = (85, 55, 25, 100) # Darker, slightly transparent brownish color (R, G, B, Alpha)
+TIRE_TRACK_RADIUS = 4                # Radius of the circular marks for tracks
+TIRE_TRACK_MIN_SPEED = 30            # Minimum speed for car to leave tracks
+TIRE_TRACK_OFFSET_REAR = 15          # How far back from car center the rear tire tracks are approximated
+TIRE_TRACK_OFFSET_SIDE = 9           # How far to the side from car center line for each tire track
+
+
 # --- Base Car Physics Constants ---
 # INCREASED for quicker driving
 BASE_MAX_CAR_SPEED = 450.0 # Original: 350.0
@@ -128,10 +139,20 @@ WORLD_BOUNDS = 4000
 MIN_OBJ_SEPARATION = 200 # Original: 250 (Minimum distance between generated objects)
 
 # --- Ramp Properties ---
-# INCREASED for more frequent jumps
-NUM_RAMPS = 35 # Original: 20
-RAMP_WIDTH = 50 # Original: 40
-RAMP_HEIGHT = 20 # Original: 15 (This is the 'depth' of the ramp, not jump height)
+NUM_RAMPS = 30 # You can adjust the number of ramps
+# RAMP_WIDTH = 50 # No longer needed for circular ramps
+# RAMP_HEIGHT = 20 # No longer needed for circular ramps
+RAMP_MIN_RADIUS = 30  # Minimum radius for a circular ramp
+RAMP_MAX_RADIUS = 50  # Maximum radius for a circular ramp
+RAMP_COLOR = (160, 160, 170)  # Existing color, can be kept
+RAMP_BORDER_COLOR = (100, 100, 110) # Existing color, can be kept
+RAMP_DEBUG_COLOR = (0, 255, 255, 100) # Existing color, can be kept
+
+# --- NEW: Road Properties ---
+ROAD_WIDTH = 100  # Width of the road surface
+ROAD_COLOR = (80, 80, 80)    # Dark gray for asphalt
+ROAD_BORDER_COLOR = (50, 50, 50) # Slightly darker gray for road edges
+ROAD_BORDER_WIDTH = 3        # Width of the road edge lines
 
 # --- Particle Properties ---
 # Dust

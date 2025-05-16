@@ -1,4 +1,4 @@
-# classes/track_elements.py
+# rally_racer_project/classes/track_elements.py
 # This file defines classes for track elements like Ramps, MudPatches, and Checkpoints.
 
 import pygame
@@ -6,112 +6,97 @@ import random
 import math
 
 import constants as const
-from utils import deg_to_rad, lerp 
-
-# Make sure Checkpoint and MudPatch classes are also in this file or imported correctly
-# For brevity, I'm focusing on the Ramp class changes.
-# class MudPatch: ... (as defined before)
-# class Checkpoint: ... (as defined before)
+from utils import deg_to_rad, lerp, clamp # Ensure clamp is imported from utils
 
 class Ramp:
     """
-    Represents a jump ramp on the track.
+    Represents a circular jump ramp on the track.
     """
-    def __init__(self, world_x, world_y, width, height, angle_deg):
+    def __init__(self, world_x, world_y, radius): # Changed parameters
         self.world_x = world_x
         self.world_y = world_y
-        self.width = width
-        self.height = height 
-        self.angle_rad = deg_to_rad(angle_deg)
-        self.cos_a = math.cos(self.angle_rad)
-        self.sin_a = math.sin(self.angle_rad)
+        self.radius = radius
+        self.diameter = radius * 2
 
-        hw, hh = self.width / 2, self.height / 2
-        self.corners_rel = [
-            (-hw, -hh), (hw, -hh),
-            (hw, hh), (-hw, hh)   
-        ]
-        
-        self.corners_world = []
-        for x_rel, y_rel in self.corners_rel:
-            wx = self.world_x + (x_rel * self.cos_a - y_rel * self.sin_a)
-            wy = self.world_y + (x_rel * self.sin_a + y_rel * self.cos_a)
-            self.corners_world.append((wx, wy))
-            
-        self.rect = self._calculate_bounding_rect(self.corners_world)
-
-    def _calculate_bounding_rect(self, points_list):
-        if not points_list:
-            return pygame.Rect(self.world_x, self.world_y, 0, 0)
-        min_x = min(p[0] for p in points_list)
-        max_x = max(p[0] for p in points_list)
-        min_y = min(p[1] for p in points_list)
-        max_y = max(p[1] for p in points_list)
-        return pygame.Rect(min_x, min_y, max_x - min_x, max_y - min_y)
+        # The bounding rectangle for this circular ramp
+        # Used for broad-phase collision checks or culling.
+        self.rect = pygame.Rect(
+            self.world_x - self.radius,
+            self.world_y - self.radius,
+            self.diameter,
+            self.diameter
+        )
+        # Old attributes for polygonal ramp are no longer needed:
+        # self.angle_rad, self.cos_a, self.sin_a, self.corners_rel, self.corners_world
+        # The old _calculate_bounding_rect method is also not needed as self.rect is simpler.
 
     def check_collision(self, car_world_rect):
-        return self.rect.colliderect(car_world_rect)
+        """
+        Checks for collision between the car's world rectangle (car_world_rect)
+        and this ramp's circular area.
+        """
+        # Find the closest point on the car's rectangle to the circle's center
+        closest_x = clamp(self.world_x, car_world_rect.left, car_world_rect.right)
+        closest_y = clamp(self.world_y, car_world_rect.top, car_world_rect.bottom)
+
+        # Calculate squared distance between the circle's center and this closest point
+        distance_x = self.world_x - closest_x
+        distance_y = self.world_y - closest_y
+        distance_squared = (distance_x * distance_x) + (distance_y * distance_y)
+
+        # If the distance is less than the circle's radius squared, an intersection occurs
+        return distance_squared < (self.radius * self.radius)
 
     def draw(self, surface, camera_offset_x, camera_offset_y):
-        """Draws the ramp as a solid object."""
-        screen_points = []
-        for px, py in self.corners_world:
-            screen_x = int(px - camera_offset_x + const.CENTER_X)
-            screen_y = int(py - camera_offset_y + const.CENTER_Y)
-            screen_points.append((screen_x, screen_y))
-        
-        # Basic culling: check if the bounding box of the ramp is on screen
-        screen_rect_approx = self.rect.move(-camera_offset_x + const.CENTER_X, -camera_offset_y + const.CENTER_Y)
-        if not screen_rect_approx.colliderect(surface.get_rect()):
+        """Draws the circular ramp as a solid object."""
+        screen_x = int(self.world_x - camera_offset_x + const.CENTER_X)
+        screen_y = int(self.world_y - camera_offset_y + const.CENTER_Y)
+        screen_radius = int(self.radius) # Assuming 1:1 world to screen scale for radius
+
+        # Culling: Check if the ramp is off-screen
+        # A simple check using screen coordinates and radius
+        if not (-screen_radius < screen_x < const.SCREEN_WIDTH + screen_radius and \
+                -screen_radius < screen_y < const.SCREEN_HEIGHT + screen_radius):
+            return # Ramp is definitely off-screen
+
+        if screen_radius < 1: # Don't draw if too small to see
             return
 
-        if len(screen_points) == 4: # Ensure it's a quadrilateral
-            # Draw the main ramp surface
-            pygame.draw.polygon(surface, const.RAMP_COLOR, screen_points)
-            # Draw a border to give it some definition
-            pygame.draw.polygon(surface, const.RAMP_BORDER_COLOR, screen_points, 3) # Border thickness 3
+        # Draw the main ramp surface (circle)
+        pygame.draw.circle(surface, const.RAMP_COLOR, (screen_x, screen_y), screen_radius)
+        
+        # Draw a border to give it some definition
+        pygame.draw.circle(surface, const.RAMP_BORDER_COLOR, (screen_x, screen_y), screen_radius, 3) # Border thickness
 
-            # Optional: Add some simple shading or detail lines to suggest 3D form
-            # For example, draw lines from "front" corners to "back" corners if perspective was different
-            # For a top-down, you could draw lines indicating the slope direction or texture.
-            # Let's add a line down the middle in the direction of the ramp's angle.
-            mid_x1_rel = 0
-            mid_y1_rel = -self.height / 2 * 0.8 # Start a bit from the edge
-            mid_x2_rel = 0
-            mid_y2_rel = self.height / 2 * 0.8  # End a bit before the edge
-
-            # Rotate these mid-line points
-            wm_x1 = self.world_x + (mid_x1_rel * self.cos_a - mid_y1_rel * self.sin_a)
-            wm_y1 = self.world_y + (mid_x1_rel * self.sin_a + mid_y1_rel * self.cos_a)
-            wm_x2 = self.world_x + (mid_x2_rel * self.cos_a - mid_y2_rel * self.sin_a)
-            wm_y2 = self.world_y + (mid_x2_rel * self.sin_a + mid_y2_rel * self.cos_a)
-
-            # Convert to screen coordinates
-            sm_x1 = int(wm_x1 - camera_offset_x + const.CENTER_X)
-            sm_y1 = int(wm_y1 - camera_offset_y + const.CENTER_Y)
-            sm_x2 = int(wm_x2 - camera_offset_x + const.CENTER_X)
-            sm_y2 = int(wm_y2 - camera_offset_y + const.CENTER_Y)
-            
-            pygame.draw.line(surface, const.RAMP_BORDER_COLOR, (sm_x1, sm_y1), (sm_x2, sm_y2), 1)
+        # Optional: Add simple shading for a 3D effect
+        # Example: A slightly darker inner circle to suggest depth or a concave shape
+        # inner_shade_radius = int(screen_radius * 0.8)
+        # if inner_shade_radius > 2:
+        #     inner_shade_color_rgb = [max(0, c - 20) for c in const.RAMP_COLOR[:3]]
+        #     pygame.draw.circle(surface, inner_shade_color_rgb, (screen_x, screen_y), inner_shade_radius)
 
 
     def draw_debug(self, surface, camera_offset_x, camera_offset_y):
         """Draws the ramp's outline for debugging purposes."""
-        # This can be kept separate if you want a different debug view
-        if not const.DEBUG_DRAW_RAMPS: 
+        if not const.DEBUG_DRAW_RAMPS:
             return
             
-        screen_points = []
-        for px, py in self.corners_world:
-            screen_x = int(px - camera_offset_x + const.CENTER_X)
-            screen_y = int(py - camera_offset_y + const.CENTER_Y)
-            screen_points.append((screen_x, screen_y))
+        screen_x = int(self.world_x - camera_offset_x + const.CENTER_X)
+        screen_y = int(self.world_y - camera_offset_y + const.CENTER_Y)
+        screen_radius = int(self.radius)
+
+        if screen_radius < 1:
+            return
         
-        if len(screen_points) == 4: 
-            pygame.draw.polygon(surface, const.RAMP_DEBUG_COLOR, screen_points, 2) 
+        # Culling check (same as in draw method)
+        if not (-screen_radius < screen_x < const.SCREEN_WIDTH + screen_radius and \
+                -screen_radius < screen_y < const.SCREEN_HEIGHT + screen_radius):
+            return
+
+        pygame.draw.circle(surface, const.RAMP_DEBUG_COLOR, (screen_x, screen_y), screen_radius, 2)
 
 
-# Ensure MudPatch and Checkpoint classes are also present in this file
+# --- MudPatch Class (Remains Unchanged from your provided file) ---
 class MudPatch:
     def __init__(self, world_x, world_y, size):
         self.world_x = world_x; self.world_y = world_y; self.size = size; self.color = const.MUD_COLOR; self.border_color = const.DARK_MUD_COLOR
@@ -133,7 +118,7 @@ class MudPatch:
         screen_rect = self.rect.move(-offset_x + const.CENTER_X, -offset_y + const.CENTER_Y)
         if screen_rect.colliderect(surface.get_rect()):
             if len(screen_points) > 2: pygame.draw.polygon(surface, self.color, screen_points); pygame.draw.polygon(surface, self.border_color, screen_points, 2)
-    def check_collision(self, point):
+    def check_collision(self, point): # This is point collision for mud, car uses rect for broad phase
         if not self.rect.collidepoint(point): return False
         x, y = point; n = len(self.points_world); inside = False; p1x, p1y = self.points_world[0]
         for i in range(n + 1):
@@ -147,6 +132,7 @@ class MudPatch:
             p1x, p1y = p2x, p2y
         return inside
 
+# --- Checkpoint Class (Remains Unchanged from your provided file) ---
 class Checkpoint: 
     def __init__(self, world_x, world_y, index, is_gate=False):
         self.world_x = world_x; self.world_y = world_y; self.index = index; self.radius = const.CHECKPOINT_RADIUS; self.is_gate = is_gate
